@@ -5,6 +5,8 @@ import Footer from "@/components/Footer";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { Trophy, Star, Filter, ArrowDown, ArrowUp, Search } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 
 // Sample extended player data with more players
 const extendedPlayerData = [
@@ -166,12 +168,15 @@ const extendedPlayerData = [
   }
 ];
 
+type TimeFilter = '24h' | 'week' | 'month' | 'alltime';
+
 const RankingsPage = () => {
   const [players, setPlayers] = useState(extendedPlayerData);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortColumn, setSortColumn] = useState("rank");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [currentPage, setCurrentPage] = useState(1);
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('alltime');
   const playersPerPage = 10;
 
   // Platform styles
@@ -189,6 +194,37 @@ const RankingsPage = () => {
   // Handle search and filtering
   useEffect(() => {
     let filteredPlayers = [...extendedPlayerData];
+
+    // Apply time filter (mock implementation)
+    if (timeFilter !== 'alltime') {
+      // This is just a simple mock - in a real app, you'd fetch different data based on timeFilter
+      // Here we'll just modify the rankings slightly to simulate different time periods
+      filteredPlayers = filteredPlayers.map(player => {
+        const randomAdjustment = Math.floor(Math.random() * 30) - 15;
+        return {
+          ...player,
+          rating: Math.max(1500, player.rating + (timeFilter === '24h' ? randomAdjustment * 2 : 
+                                                 timeFilter === 'week' ? randomAdjustment : 
+                                                 randomAdjustment / 2)),
+          rank: player.rank, // We'll sort and reassign ranks after filtering
+          wins: Math.max(1, player.wins + (timeFilter === '24h' ? Math.floor(randomAdjustment / 10) : 
+                                          timeFilter === 'week' ? Math.floor(randomAdjustment / 5) : 
+                                          Math.floor(randomAdjustment / 3))),
+          change: timeFilter === '24h' ? Math.floor(Math.random() * 10) - 5 :
+                 timeFilter === 'week' ? Math.floor(Math.random() * 15) - 7 :
+                 Math.floor(Math.random() * 20) - 10
+        };
+      });
+      
+      // Re-sort by rating to simulate new rankings for the time period
+      filteredPlayers.sort((a, b) => b.rating - a.rating);
+      
+      // Re-assign ranks
+      filteredPlayers = filteredPlayers.map((player, index) => ({
+        ...player,
+        rank: index + 1
+      }));
+    }
 
     // Apply search filter
     if (searchQuery) {
@@ -217,7 +253,9 @@ const RankingsPage = () => {
     });
 
     setPlayers(filteredPlayers);
-  }, [searchQuery, sortColumn, sortDirection]);
+    // Reset to first page when filters change
+    setCurrentPage(1);
+  }, [searchQuery, sortColumn, sortDirection, timeFilter]);
 
   // Calculate pagination
   const indexOfLastPlayer = currentPage * playersPerPage;
@@ -247,41 +285,70 @@ const RankingsPage = () => {
         </div>
       </div>
       
-      {/* Search and filters */}
+      {/* Search, filters and time period selector */}
       <div className="px-6 md:px-12 pb-8">
         <div className="max-w-7xl mx-auto">
           <div className="glass-card p-4 md:p-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              {/* Search bar */}
-              <div className="relative flex-grow">
-                <input
-                  type="text"
-                  placeholder="Поиск игроков..."
-                  className="w-full bg-fc-background border border-fc-muted rounded-lg py-2 px-4 pl-10 text-white focus:outline-none focus:border-fc-accent"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <Search size={18} className="text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row gap-4">
+                {/* Search bar */}
+                <div className="relative flex-grow">
+                  <input
+                    type="text"
+                    placeholder="Поиск игроков..."
+                    className="w-full bg-fc-background border border-fc-muted rounded-lg py-2 px-4 pl-10 text-white focus:outline-none focus:border-fc-accent"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <Search size={18} className="text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                </div>
+                
+                {/* Filters - simplified for now */}
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-400 flex items-center">
+                    <Filter size={16} className="mr-1" />
+                    Платформа:
+                  </span>
+                  <button className="px-3 py-1 rounded-full bg-fc-accent text-fc-background">
+                    Все
+                  </button>
+                  <button className="px-3 py-1 rounded-full bg-fc-muted text-white hover:bg-fc-muted/80">
+                    PS5
+                  </button>
+                  <button className="px-3 py-1 rounded-full bg-fc-muted text-white hover:bg-fc-muted/80">
+                    Xbox
+                  </button>
+                  <button className="px-3 py-1 rounded-full bg-fc-muted text-white hover:bg-fc-muted/80">
+                    PC
+                  </button>
+                </div>
               </div>
               
-              {/* Filters - simplified for now */}
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-gray-400 flex items-center">
-                  <Filter size={16} className="mr-1" />
-                  Платформа:
-                </span>
-                <button className="px-3 py-1 rounded-full bg-fc-accent text-fc-background">
-                  Все
-                </button>
-                <button className="px-3 py-1 rounded-full bg-fc-muted text-white hover:bg-fc-muted/80">
-                  PS5
-                </button>
-                <button className="px-3 py-1 rounded-full bg-fc-muted text-white hover:bg-fc-muted/80">
-                  Xbox
-                </button>
-                <button className="px-3 py-1 rounded-full bg-fc-muted text-white hover:bg-fc-muted/80">
-                  PC
-                </button>
+              {/* Time period filter */}
+              <div className="border-t border-fc-muted pt-4">
+                <RadioGroup 
+                  defaultValue="alltime" 
+                  className="flex flex-wrap gap-x-6 gap-y-2" 
+                  value={timeFilter}
+                  onValueChange={(value) => setTimeFilter(value as TimeFilter)}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="24h" id="24h" className="border-fc-accent text-fc-accent" />
+                    <Label htmlFor="24h" className="text-sm cursor-pointer">За 24 часа</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="week" id="week" className="border-fc-accent text-fc-accent" />
+                    <Label htmlFor="week" className="text-sm cursor-pointer">За неделю</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="month" id="month" className="border-fc-accent text-fc-accent" />
+                    <Label htmlFor="month" className="text-sm cursor-pointer">За месяц</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="alltime" id="alltime" className="border-fc-accent text-fc-accent" />
+                    <Label htmlFor="alltime" className="text-sm cursor-pointer">За всё время</Label>
+                  </div>
+                </RadioGroup>
               </div>
             </div>
           </div>
@@ -354,7 +421,11 @@ const RankingsPage = () => {
                           />
                         </div>
                         <div>
-                          <div className="font-medium">{player.name}</div>
+                          <div className="font-medium">
+                            <a href={`/players/${player.id}`} className="hover:text-fc-accent transition-colors">
+                              {player.name}
+                            </a>
+                          </div>
                           <div className="text-xs text-gray-400">{player.platform.toUpperCase()}</div>
                         </div>
                       </div>

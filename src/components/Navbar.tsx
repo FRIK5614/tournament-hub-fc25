@@ -1,11 +1,12 @@
 
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, User, Search } from 'lucide-react';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -19,6 +20,10 @@ const Navbar = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const isActivePath = (path: string) => {
+    return location.pathname === path;
+  };
 
   return (
     <nav
@@ -36,16 +41,54 @@ const Navbar = () => {
 
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-8">
-          <Link to="/" className="text-white hover:text-fc-accent transition-colors">
+          <Link 
+            to="/" 
+            className={`transition-colors ${
+              isActivePath('/') 
+                ? 'text-fc-accent' 
+                : 'text-white hover:text-fc-accent'
+            }`}
+          >
             Главная
           </Link>
-          <Link to="/tournaments" className="text-white hover:text-fc-accent transition-colors">
+          <Link 
+            to="/tournaments" 
+            className={`transition-colors ${
+              isActivePath('/tournaments') 
+                ? 'text-fc-accent' 
+                : 'text-white hover:text-fc-accent'
+            }`}
+          >
             Турниры
           </Link>
-          <Link to="/rankings" className="text-white hover:text-fc-accent transition-colors">
+          <Link 
+            to="/streams" 
+            className={`transition-colors ${
+              isActivePath('/streams') 
+                ? 'text-fc-accent' 
+                : 'text-white hover:text-fc-accent'
+            }`}
+          >
+            Трансляции
+          </Link>
+          <Link 
+            to="/rankings" 
+            className={`transition-colors ${
+              isActivePath('/rankings') 
+                ? 'text-fc-accent' 
+                : 'text-white hover:text-fc-accent'
+            }`}
+          >
             Рейтинг
           </Link>
-          <Link to="/about" className="text-white hover:text-fc-accent transition-colors">
+          <Link 
+            to="/about" 
+            className={`transition-colors ${
+              isActivePath('/about') 
+                ? 'text-fc-accent' 
+                : 'text-white hover:text-fc-accent'
+            }`}
+          >
             О нас
           </Link>
         </div>
@@ -76,28 +119,55 @@ const Navbar = () => {
           <div className="flex flex-col p-4 gap-4">
             <Link 
               to="/" 
-              className="text-white hover:text-fc-accent transition-colors py-2 px-4"
+              className={`transition-colors py-2 px-4 ${
+                isActivePath('/') 
+                  ? 'text-fc-accent' 
+                  : 'text-white hover:text-fc-accent'
+              }`}
               onClick={() => setIsMenuOpen(false)}
             >
               Главная
             </Link>
             <Link 
               to="/tournaments" 
-              className="text-white hover:text-fc-accent transition-colors py-2 px-4"
+              className={`transition-colors py-2 px-4 ${
+                isActivePath('/tournaments') 
+                  ? 'text-fc-accent' 
+                  : 'text-white hover:text-fc-accent'
+              }`}
               onClick={() => setIsMenuOpen(false)}
             >
               Турниры
             </Link>
             <Link 
+              to="/streams" 
+              className={`transition-colors py-2 px-4 ${
+                isActivePath('/streams') 
+                  ? 'text-fc-accent' 
+                  : 'text-white hover:text-fc-accent'
+              }`}
+              onClick={() => setIsMenuOpen(false)}
+            >
+              Трансляции
+            </Link>
+            <Link 
               to="/rankings" 
-              className="text-white hover:text-fc-accent transition-colors py-2 px-4"
+              className={`transition-colors py-2 px-4 ${
+                isActivePath('/rankings') 
+                  ? 'text-fc-accent' 
+                  : 'text-white hover:text-fc-accent'
+              }`}
               onClick={() => setIsMenuOpen(false)}
             >
               Рейтинг
             </Link>
             <Link 
               to="/about" 
-              className="text-white hover:text-fc-accent transition-colors py-2 px-4"
+              className={`transition-colors py-2 px-4 ${
+                isActivePath('/about') 
+                  ? 'text-fc-accent' 
+                  : 'text-white hover:text-fc-accent'
+              }`}
               onClick={() => setIsMenuOpen(false)}
             >
               О нас

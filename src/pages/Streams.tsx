@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import StreamCard from '@/components/StreamCard';
-import { Search, Filter } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, SortAsc, Users, Clock, AlignLeft } from 'lucide-react';
 
 // Sample stream data
 const streamData = [
@@ -57,28 +57,79 @@ const streamData = [
   }
 ];
 
+type SortOption = 'viewers' | 'startTime' | 'streamer';
+
 const StreamsPage = () => {
   const [activeFilter, setActiveFilter] = useState<'all' | 'live' | 'upcoming'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<SortOption>('viewers');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
   useEffect(() => {
     // Scroll to top when component mounts
     window.scrollTo(0, 0);
   }, []);
   
-  // Filter streams based on active filter and search query
-  const filteredStreams = streamData.filter(stream => {
-    const matchesFilter = 
-      activeFilter === 'all' || 
-      (activeFilter === 'live' && stream.isLive) ||
-      (activeFilter === 'upcoming' && !stream.isLive);
+  // Toggle sort direction
+  const toggleSortDirection = () => {
+    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+  };
+
+  // Change sort option
+  const handleSortChange = (option: SortOption) => {
+    if (sortBy === option) {
+      toggleSortDirection();
+    } else {
+      setSortBy(option);
+      setSortDirection('desc');
+    }
+  };
+  
+  // Filter and sort streams based on active filter, search query, and sort options
+  const filteredAndSortedStreams = streamData
+    .filter(stream => {
+      const matchesFilter = 
+        activeFilter === 'all' || 
+        (activeFilter === 'live' && stream.isLive) ||
+        (activeFilter === 'upcoming' && !stream.isLive);
+        
+      const matchesSearch = 
+        stream.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        stream.streamer.toLowerCase().includes(searchQuery.toLowerCase());
+        
+      return matchesFilter && matchesSearch;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'viewers') {
+        const viewersA = a.viewers || 0;
+        const viewersB = b.viewers || 0;
+        return sortDirection === 'asc' ? viewersA - viewersB : viewersB - viewersA;
+      } 
       
-    const matchesSearch = 
-      stream.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      stream.streamer.toLowerCase().includes(searchQuery.toLowerCase());
+      if (sortBy === 'startTime') {
+        // For live streams, they come first (or last, depending on sort direction)
+        if (a.isLive && !b.isLive) return sortDirection === 'asc' ? 1 : -1;
+        if (!a.isLive && b.isLive) return sortDirection === 'asc' ? -1 : 1;
+        
+        // If both are upcoming, sort by startTime
+        if (!a.isLive && !b.isLive) {
+          return sortDirection === 'asc' 
+            ? (a.startTime || '').localeCompare(b.startTime || '')
+            : (b.startTime || '').localeCompare(a.startTime || '');
+        }
+        
+        // If both are live, leave order as is
+        return 0;
+      }
       
-    return matchesFilter && matchesSearch;
-  });
+      if (sortBy === 'streamer') {
+        return sortDirection === 'asc'
+          ? a.streamer.localeCompare(b.streamer)
+          : b.streamer.localeCompare(a.streamer);
+      }
+      
+      return 0;
+    });
 
   return (
     <div className="min-h-screen bg-fc-background text-white">
@@ -92,7 +143,7 @@ const StreamsPage = () => {
         </div>
       </div>
       
-      {/* Search and filters */}
+      {/* Search, filters and sorting */}
       <div className="px-6 md:px-12 pb-8">
         <div className="max-w-7xl mx-auto">
           <div className="glass-card p-4 md:p-6">
@@ -110,7 +161,7 @@ const StreamsPage = () => {
               </div>
               
               {/* Filters */}
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-gray-400 flex items-center">
                   <Filter size={16} className="mr-1" />
                   Фильтр:
@@ -147,6 +198,62 @@ const StreamsPage = () => {
                 </button>
               </div>
             </div>
+            
+            {/* Sorting options */}
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-gray-400 flex items-center">
+                <ArrowUpDown size={16} className="mr-1" />
+                Сортировка:
+              </span>
+              <button
+                className={`flex items-center px-3 py-1 rounded-full transition-colors ${
+                  sortBy === 'viewers' 
+                    ? 'bg-fc-accent text-fc-background' 
+                    : 'bg-fc-muted text-white hover:bg-fc-muted/80'
+                }`}
+                onClick={() => handleSortChange('viewers')}
+              >
+                <Users size={14} className="mr-1" />
+                Зрители
+                {sortBy === 'viewers' && (
+                  <SortAsc size={14} className={`ml-1 transition-transform ${
+                    sortDirection === 'desc' ? 'rotate-180' : ''
+                  }`} />
+                )}
+              </button>
+              <button
+                className={`flex items-center px-3 py-1 rounded-full transition-colors ${
+                  sortBy === 'startTime' 
+                    ? 'bg-fc-accent text-fc-background' 
+                    : 'bg-fc-muted text-white hover:bg-fc-muted/80'
+                }`}
+                onClick={() => handleSortChange('startTime')}
+              >
+                <Clock size={14} className="mr-1" />
+                Время
+                {sortBy === 'startTime' && (
+                  <SortAsc size={14} className={`ml-1 transition-transform ${
+                    sortDirection === 'desc' ? 'rotate-180' : ''
+                  }`} />
+                )}
+              </button>
+              <button
+                className={`flex items-center px-3 py-1 rounded-full transition-colors ${
+                  sortBy === 'streamer' 
+                    ? 'bg-fc-accent text-fc-background' 
+                    : 'bg-fc-muted text-white hover:bg-fc-muted/80'
+                }`}
+                onClick={() => handleSortChange('streamer')}
+              >
+                <AlignLeft size={14} className="mr-1" />
+                Стример
+                {sortBy === 'streamer' && (
+                  <SortAsc size={14} className={`ml-1 transition-transform ${
+                    sortDirection === 'desc' ? 'rotate-180' : ''
+                  }`} />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -154,9 +261,9 @@ const StreamsPage = () => {
       {/* Streams grid */}
       <div className="px-6 md:px-12 pb-16">
         <div className="max-w-7xl mx-auto">
-          {filteredStreams.length > 0 ? (
+          {filteredAndSortedStreams.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-              {filteredStreams.map((stream) => (
+              {filteredAndSortedStreams.map((stream) => (
                 <StreamCard key={stream.id} {...stream} />
               ))}
             </div>

@@ -7,12 +7,12 @@ interface StreamCardProps {
   title: string;
   thumbnail: string;
   streamer: string;
-  viewers: number;
+  viewers?: number; // Changed to optional
   isLive: boolean;
   startTime?: string; // For upcoming streams
 }
 
-const StreamCard = ({ id, title, thumbnail, streamer, viewers, isLive, startTime }: StreamCardProps) => {
+const StreamCard = ({ id, title, thumbnail, streamer, viewers = 0, isLive, startTime }: StreamCardProps) => {
   return (
     <Link to={`/streams/${id}`}>
       <div className="glass-card overflow-hidden card-hover">
@@ -33,7 +33,7 @@ const StreamCard = ({ id, title, thumbnail, streamer, viewers, isLive, startTime
           </div>
           
           {/* View count */}
-          {isLive && (
+          {isLive && viewers > 0 && (
             <div className="absolute top-3 right-3 text-xs font-semibold px-3 py-1 rounded-full bg-black bg-opacity-70 text-white flex items-center">
               <Eye size={12} className="mr-1" />
               <span>{viewers}</span>

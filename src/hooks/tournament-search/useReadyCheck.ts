@@ -1,3 +1,4 @@
+
 import { useEffect } from 'react';
 import { TournamentSearchState } from './types';
 import { TournamentSearchAction } from './reducer';

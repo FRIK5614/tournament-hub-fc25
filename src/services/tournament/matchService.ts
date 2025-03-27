@@ -2,23 +2,31 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export const getPlayerMatches = async (tournamentId: string, userId: string) => {
-  const { data, error } = await supabase
-    .from('matches')
-    .select(`
-      *,
-      player1:player1_id(id, username, avatar_url),
-      player2:player2_id(id, username, avatar_url)
-    `)
-    .eq('tournament_id', tournamentId)
-    .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
-    .order('created_at', { ascending: true });
-  
-  if (error) {
-    console.error("Ошибка при получении матчей игрока:", error);
-    throw new Error("Не удалось получить список матчей. Пожалуйста, попробуйте снова.");
+  try {
+    console.log(`[MATCH-SERVICE] Getting matches for player ${userId} in tournament ${tournamentId}`);
+    
+    const { data, error } = await supabase
+      .from('matches')
+      .select(`
+        *,
+        player1:player1_id(id, username, avatar_url),
+        player2:player2_id(id, username, avatar_url)
+      `)
+      .eq('tournament_id', tournamentId)
+      .or(`player1_id.eq.${userId},player2_id.eq.${userId}`)
+      .order('created_at', { ascending: true });
+    
+    if (error) {
+      console.error(`[MATCH-SERVICE] Error loading matches:`, error);
+      throw error;
+    }
+    
+    console.log(`[MATCH-SERVICE] Successfully loaded ${data?.length || 0} matches`);
+    return data || [];
+  } catch (error: any) {
+    console.error(`[MATCH-SERVICE] Error in getPlayerMatches:`, error);
+    throw new Error(`Не удалось получить список матчей: ${error.message}`);
   }
-  
-  return data;
 };
 
 export const submitMatchResult = async (
@@ -46,7 +54,7 @@ export const submitMatchResult = async (
   
   // Check if the user is a participant
   if (match.player1_id !== user.user.id && match.player2_id !== user.user.id) {
-    throw new Error("Вы не вляетесь участником этого матча");
+    throw new Error("Вы не являетесь участником этого матча");
   }
   
   // Determine winner
@@ -143,7 +151,7 @@ export const confirmMatchResult = async (matchId: string, confirm: boolean) => {
     
     if (error) {
       console.error("Ошибка при отклонении результатов:", error);
-      throw new Error("Не удалось отклонить реультаты. Пожалуйста, попробуйте снова.");
+      throw new Error("Не удалось отклонить результаты. Пожалуйста, попробуйте снова.");
     }
   }
   

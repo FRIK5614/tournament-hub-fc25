@@ -1,5 +1,6 @@
 
 import { useState } from 'react';
+import { useToast } from "@/hooks/use-toast";
 import MatchResultDisplay from './match/MatchResultDisplay';
 import MatchInstructions from './match/MatchInstructions';
 import MatchResultSubmission from './match/MatchResultSubmission';
@@ -11,9 +12,20 @@ interface MatchCardProps {
 }
 
 const MatchCard = ({ match, userId }: MatchCardProps) => {
+  const { toast } = useToast();
   const isPlayer1 = userId === match.player1_id;
   const isPlayer2 = userId === match.player2_id;
   const isAwaitingConfirmation = match.status === 'awaiting_confirmation';
+  
+  if (!isPlayer1 && !isPlayer2) {
+    return (
+      <div className="glass-card p-6 text-center">
+        <p className="text-gray-400">
+          Вы не участвуете в этом матче.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="glass-card border-fc-accent p-6">

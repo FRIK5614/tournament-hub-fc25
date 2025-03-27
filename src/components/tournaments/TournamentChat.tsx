@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send } from 'lucide-react';
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface TournamentChatProps {
   tournamentId: string;
@@ -25,6 +26,7 @@ const TournamentChat = ({ tournamentId }: TournamentChatProps) => {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   // Fetch chat messages and set up realtime subscription
   useEffect(() => {
@@ -44,13 +46,21 @@ const TournamentChat = ({ tournamentId }: TournamentChatProps) => {
           .eq('tournament_id', tournamentId)
           .order('created_at', { ascending: true });
           
-        if (error) throw error;
+        if (error) {
+          console.error('Error fetching chat messages:', error);
+          throw error;
+        }
         
         setMessages(data || []);
         setLoading(false);
         scrollToBottom();
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching chat messages:', error);
+        toast({
+          title: "Ошибка загрузки сообщений",
+          description: error.message || "Не удалось загрузить сообщения чата",
+          variant: "destructive"
+        });
         setLoading(false);
       }
     };
@@ -66,27 +76,33 @@ const TournamentChat = ({ tournamentId }: TournamentChatProps) => {
         table: 'chat_messages',
         filter: `tournament_id=eq.${tournamentId}`
       }, async (payload) => {
-        // Fetch the user data for the new message
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('username, avatar_url')
-          .eq('id', payload.new.user_id)
-          .single();
+        try {
+          // Fetch the user data for the new message
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('username, avatar_url')
+            .eq('id', payload.new.user_id)
+            .single();
+            
+          if (error) throw error;
           
-        const newMessage = {
-          ...payload.new,
-          user: data
-        } as ChatMessage;
-        
-        setMessages(prev => [...prev, newMessage]);
-        scrollToBottom();
+          const newMessage = {
+            ...payload.new,
+            user: data
+          } as ChatMessage;
+          
+          setMessages(prev => [...prev, newMessage]);
+          scrollToBottom();
+        } catch (error) {
+          console.error('Error processing new chat message:', error);
+        }
       })
       .subscribe();
     
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [tournamentId]);
+  }, [tournamentId, toast]);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -108,11 +124,24 @@ const TournamentChat = ({ tournamentId }: TournamentChatProps) => {
           message: newMessage.trim()
         });
         
-      if (error) throw error;
+      if (error) {
+        console.error('Error sending message:', error);
+        toast({
+          title: "Ошибка отправки",
+          description: "Не удалось отправить сообщение",
+          variant: "destructive"
+        });
+        return;
+      }
       
       setNewMessage('');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error);
+      toast({
+        title: "Ошибка отправки",
+        description: error.message || "Не удалось отправить сообщение",
+        variant: "destructive"
+      });
     }
   };
 

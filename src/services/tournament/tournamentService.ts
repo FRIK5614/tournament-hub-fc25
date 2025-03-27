@@ -2,21 +2,29 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export const getTournamentStandings = async (tournamentId: string) => {
-  const { data, error } = await supabase
-    .from('tournament_participants')
-    .select(`
-      *,
-      user:user_id(id, username, avatar_url, rating, platform)
-    `)
-    .eq('tournament_id', tournamentId)
-    .order('points', { ascending: false });
-  
-  if (error) {
-    console.error("Ошибка при получении турнирной таблицы:", error);
-    throw new Error("Не удалось получить турнирную таблицу. Пожалуйста, попробуйте снова.");
+  try {
+    console.log(`[TOURNAMENT-SERVICE] Getting standings for tournament ${tournamentId}`);
+    
+    const { data, error } = await supabase
+      .from('tournament_participants')
+      .select(`
+        *,
+        user:user_id(id, username, avatar_url, rating, platform)
+      `)
+      .eq('tournament_id', tournamentId)
+      .order('points', { ascending: false });
+    
+    if (error) {
+      console.error(`[TOURNAMENT-SERVICE] Error loading standings:`, error);
+      throw error;
+    }
+    
+    console.log(`[TOURNAMENT-SERVICE] Successfully loaded ${data?.length || 0} participants for standings`);
+    return data || [];
+  } catch (error: any) {
+    console.error(`[TOURNAMENT-SERVICE] Error in getTournamentStandings:`, error);
+    throw new Error(`Не удалось получить турнирную таблицу: ${error.message}`);
   }
-  
-  return data;
 };
 
 export const getLongTermTournaments = async () => {

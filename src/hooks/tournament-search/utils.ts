@@ -119,7 +119,9 @@ export const fetchLobbyParticipants = async (lobbyId: string) => {
       };
     });
     
-    console.log(`[TOURNAMENT-UI] Found ${participantsWithProfiles.length} participants in lobby ${lobbyId}`);
+    console.log(`[TOURNAMENT-UI] Found ${participantsWithProfiles.length} participants in lobby ${lobbyId}:`, 
+      participantsWithProfiles.map(p => p.profile?.username)
+    );
     return participantsWithProfiles;
   } catch (error) {
     console.error('[TOURNAMENT-UI] Error in fetchLobbyParticipants:', error);

@@ -83,7 +83,11 @@ export const useSearchActions = (
 
   const handleStartSearch = useCallback(async (isRetry: boolean = false): Promise<void> => {
     console.log("[TOURNAMENT-UI] handleStartSearch called, isRetry:", isRetry);
+    // Устанавливаем loading и сбрасываем предыдущее состояние поиска
     dispatch({ type: 'SET_LOADING', payload: true });
+    if (!isRetry) {
+      dispatch({ type: 'RESET_SEARCH' });
+    }
     dispatch({ type: 'SET_SEARCH_ATTEMPTS', payload: isRetry ? state.searchAttempts + 1 : 0 });
 
     try {
@@ -96,6 +100,9 @@ export const useSearchActions = (
       
       console.log(`[TOURNAMENT-UI] Current user ID: ${user.user.id}`);
       dispatch({ type: 'SET_CURRENT_USER_ID', payload: user.user.id });
+
+      // Устанавливаем isSearching=true до вызова API для мгновенного отображения UI
+      dispatch({ type: 'SET_SEARCHING', payload: true });
 
       // Search for a quick tournament
       const { lobbyId } = await searchForQuickTournament();
@@ -119,7 +126,7 @@ export const useSearchActions = (
         console.error("[TOURNAMENT-UI] Error fetching initial lobby data:", error);
       }
 
-      dispatch({ type: 'SET_SEARCHING', payload: true });
+      // Установка состояний после успешного поиска
       dispatch({ type: 'SET_LOADING', payload: false });
       
       toast({
@@ -141,6 +148,9 @@ export const useSearchActions = (
           handleStartSearch(true);
         }, 2000);
       } else {
+        // Сбрасываем состояние поиска при ошибке
+        dispatch({ type: 'RESET_SEARCH' });
+        
         // If retry also failed, show error to user
         toast({
           title: "Ошибка поиска",

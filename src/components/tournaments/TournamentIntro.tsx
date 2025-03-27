@@ -16,7 +16,7 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
       </p>
       
       <Button 
-        className="bg-fc-accent hover:bg-fc-accent/80 transition-colors w-full py-6 text-lg font-medium"
+        className="bg-fc-accent hover:bg-fc-accent/80 w-full py-6 text-lg font-medium"
         onClick={() => {
           console.log("[TOURNAMENT-UI] Найти турнир button clicked");
           onStartSearch();

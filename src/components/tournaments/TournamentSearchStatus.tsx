@@ -16,16 +16,6 @@ const TournamentSearchStatus = ({
   onCancel,
   onRetry
 }: TournamentSearchStatusProps) => {
-  // Get current user ID to highlight current user
-  const getCurrentUserId = async () => {
-    try {
-      const { data } = await fetch('/api/user').then(res => res.json());
-      return data?.user?.id;
-    } catch (error) {
-      return null;
-    }
-  };
-
   return (
     <div className="text-center">
       <div className="flex items-center justify-center mb-4">

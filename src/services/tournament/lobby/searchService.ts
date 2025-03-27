@@ -282,9 +282,9 @@ export const searchForQuickTournament = async () => {
           user_id: user.user.id,
           status: initialStatus,
           is_ready: false
-        })
-        .onConflict(['lobby_id', 'user_id'])
-        .merge();
+        });
+        
+      // Note: Removed the onConflict() method which was causing the TypeScript error
     }
     
     return { lobbyId };

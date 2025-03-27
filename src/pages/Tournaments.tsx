@@ -6,6 +6,8 @@ import Footer from '@/components/Footer';
 import TournamentHeader from '@/components/tournaments/TournamentHeader';
 import TournamentTabs from '@/components/tournaments/TournamentTabs';
 import QuickTournamentSection from '@/components/tournaments/QuickTournamentSection';
+import TournamentCleanup from '@/components/admin/TournamentCleanup';
+import { analyzeTournamentCreation } from '@/services/tournament';
 
 const Tournaments = () => {
   const [activeTournaments, setActiveTournaments] = useState<any[]>([]);
@@ -13,12 +15,30 @@ const Tournaments = () => {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userTournaments, setUserTournaments] = useState<any[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showCleanup, setShowCleanup] = useState(false);
 
   useEffect(() => {
     const fetchUserTournaments = async () => {
       const { data: user } = await supabase.auth.getUser();
       
       if (user?.user) {
+        // Проверяем, является ли пользователь администратором
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('admin')
+          .eq('id', user.user.id)
+          .single();
+          
+        setIsAdmin(profile?.admin === true);
+        
+        // Если много дубликатов турниров, показываем компонент очистки
+        const analysis = await analyzeTournamentCreation().catch(() => null);
+        if (analysis && analysis.totalDuplicates > 0) {
+          setShowCleanup(true);
+        }
+        
+        // Загружаем активные турниры пользователя
         const { data: participations, error } = await supabase
           .from('tournament_participants')
           .select('tournament_id(*, lobby:lobby_id(*))')
@@ -82,9 +102,9 @@ const Tournaments = () => {
             <QuickTournamentSection isLoggedIn={isLoggedIn} />
             
             <div className="lg:col-span-2">
-              <div className="glass-card p-6">
-                <h3 className="text-xl font-semibold mb-4">Ваши текущие турниры</h3>
-                {userTournaments.length > 0 ? (
+              {userTournaments.length > 0 ? (
+                <div className="glass-card p-6">
+                  <h3 className="text-xl font-semibold mb-4">Ваши текущие турниры</h3>
                   <div className="space-y-4">
                     {userTournaments.map(tournament => (
                       <div 
@@ -101,10 +121,20 @@ const Tournaments = () => {
                       </div>
                     ))}
                   </div>
-                ) : (
+                </div>
+              ) : (
+                <div className="glass-card p-6">
+                  <h3 className="text-xl font-semibold mb-4">Ваши текущие турниры</h3>
                   <p className="text-gray-400">У вас нет активных турниров</p>
-                )}
-              </div>
+                </div>
+              )}
+              
+              {/* Компонент очистки турниров для администраторов */}
+              {isAdmin && showCleanup && (
+                <div className="mt-6">
+                  <TournamentCleanup />
+                </div>
+              )}
             </div>
           </div>
           

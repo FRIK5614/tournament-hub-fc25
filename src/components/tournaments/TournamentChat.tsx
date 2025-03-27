@@ -1,53 +1,53 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Send } from 'lucide-react';
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { motion } from 'framer-motion';
 
-interface TournamentChatProps {
-  tournamentId: string;
-}
-
-interface ChatMessage {
-  id: string;
-  created_at: string;
-  message: string;
-  user_id: string;
-  tournament_id: string;
-  user?: {
-    username: string;
-    avatar_url: string;
-  };
-}
-
-const TournamentChat = ({ tournamentId }: TournamentChatProps) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
+  const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const [user, setUser] = useState<any>(null);
+  const messageEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Fetch chat messages and set up realtime subscription
   useEffect(() => {
-    const fetchMessages = async () => {
+    const getUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user) {
+        // Получаем также данные профиля
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username, avatar_url')
+          .eq('id', data.user.id)
+          .single();
+          
+        setUser({
+          ...data.user,
+          username: profile?.username || data.user.email?.split('@')[0] || 'Гость',
+          avatar_url: profile?.avatar_url
+        });
+      }
+    };
+    
+    getUser();
+  }, []);
+
+  useEffect(() => {
+    const loadMessages = async () => {
       try {
-        // Get current user
-        const { data: userData } = await supabase.auth.getUser();
-        setCurrentUser(userData?.user || null);
-        
-        // Get chat messages
         const { data, error } = await supabase
           .from('chat_messages')
           .select(`
             *,
-            user:user_id(username, avatar_url)
+            sender:user_id(id, username, avatar_url)
           `)
           .eq('tournament_id', tournamentId)
           .order('created_at', { ascending: true });
           
         if (error) {
-          console.error('Error fetching chat messages:', error);
           throw error;
         }
         
@@ -55,175 +55,161 @@ const TournamentChat = ({ tournamentId }: TournamentChatProps) => {
         setLoading(false);
         scrollToBottom();
       } catch (error: any) {
-        console.error('Error fetching chat messages:', error);
+        console.error('Error loading chat messages:', error);
         toast({
-          title: "Ошибка загрузки сообщений",
-          description: error.message || "Не удалось загрузить сообщения чата",
-          variant: "destructive"
+          title: 'Ошибка загрузки чата',
+          description: error.message || 'Не удалось загрузить сообщения',
+          variant: 'destructive',
         });
         setLoading(false);
       }
     };
     
-    fetchMessages();
+    loadMessages();
     
-    // Subscribe to new messages
-    const subscription = supabase
-      .channel('chat_messages')
+    // Подписка на новые сообщения
+    const channel = supabase
+      .channel('tournament_chat_messages')
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'chat_messages',
         filter: `tournament_id=eq.${tournamentId}`
       }, async (payload) => {
-        try {
-          // Fetch the user data for the new message
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('username, avatar_url')
-            .eq('id', payload.new.user_id)
-            .single();
-            
-          if (error) throw error;
+        // Загружаем полные данные о новом сообщении с информацией об отправителе
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select(`
+            *,
+            sender:user_id(id, username, avatar_url)
+          `)
+          .eq('id', payload.new.id)
+          .single();
           
-          const newMessage = {
-            ...payload.new,
-            user: data
-          } as ChatMessage;
-          
-          setMessages(prev => [...prev, newMessage]);
+        if (!error && data) {
+          setMessages(prevMessages => [...prevMessages, data]);
           scrollToBottom();
-        } catch (error) {
-          console.error('Error processing new chat message:', error);
         }
       })
       .subscribe();
-    
+      
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(channel);
     };
   }, [tournamentId, toast]);
 
   const scrollToBottom = () => {
     setTimeout(() => {
-      endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
   };
 
-  const sendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newMessage.trim() || !currentUser) return;
+    if (!newMessage.trim() || !user) return;
     
     try {
       const { error } = await supabase
         .from('chat_messages')
         .insert({
-          tournament_id: tournamentId,
-          user_id: currentUser.id,
-          message: newMessage.trim()
+          message: newMessage.trim(),
+          user_id: user.id,
+          tournament_id: tournamentId
         });
         
       if (error) {
-        console.error('Error sending message:', error);
-        toast({
-          title: "Ошибка отправки",
-          description: "Не удалось отправить сообщение",
-          variant: "destructive"
-        });
-        return;
+        throw error;
       }
       
       setNewMessage('');
     } catch (error: any) {
       console.error('Error sending message:', error);
       toast({
-        title: "Ошибка отправки",
-        description: error.message || "Не удалось отправить сообщение",
-        variant: "destructive"
+        title: 'Ошибка отправки',
+        description: error.message || 'Не удалось отправить сообщение',
+        variant: 'destructive',
       });
     }
   };
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
   return (
-    <div className="glass-card h-[70vh] flex flex-col">
-      <div className="p-4 border-b border-gray-700">
-        <h3 className="text-lg font-semibold">Чат турнира</h3>
-        <p className="text-sm text-gray-400">Обсудите турнир с другими участниками</p>
-      </div>
+    <div className="glass-card h-full flex flex-col">
+      <h3 className="text-lg font-semibold mb-2 p-3 border-b border-gray-800">
+        Чат турнира
+      </h3>
       
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-[300px] max-h-[400px]">
         {loading ? (
           <div className="text-center py-4">
-            <span className="text-gray-400">Загрузка сообщений...</span>
+            <span className="animate-pulse">Загрузка сообщений...</span>
           </div>
         ) : messages.length === 0 ? (
-          <div className="text-center py-4">
-            <span className="text-gray-400">Пока нет сообщений. Напишите первым!</span>
+          <div className="text-center py-8 text-gray-400">
+            Пока нет сообщений в чате
           </div>
         ) : (
-          messages.map((msg) => (
-            <div 
-              key={msg.id} 
-              className={`flex ${msg.user_id === currentUser?.id ? 'justify-end' : 'justify-start'}`}
+          messages.map((msg, index) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }}
+              className={`flex gap-2 ${msg.user_id === user?.id ? 'justify-end' : 'justify-start'}`}
             >
               <div 
-                className={`max-w-[80%] rounded-lg px-3 py-2 ${
-                  msg.user_id === currentUser?.id 
+                className={`rounded-lg px-3 py-2 max-w-[85%] break-words ${
+                  msg.user_id === user?.id 
                     ? 'bg-fc-accent/20 text-white' 
-                    : 'bg-gray-700/50 text-white'
+                    : 'bg-gray-800 text-gray-200'
                 }`}
               >
-                <div className="flex items-center mb-1">
-                  {msg.user_id !== currentUser?.id && (
-                    <>
-                      {msg.user?.avatar_url ? (
-                        <img 
-                          src={msg.user.avatar_url} 
-                          alt={msg.user.username} 
-                          className="w-5 h-5 rounded-full mr-1"
-                        />
-                      ) : (
-                        <div className="w-5 h-5 rounded-full bg-gray-600 mr-1"></div>
-                      )}
-                      <span className="text-xs font-medium mr-1">
-                        {msg.user?.username || 'Неизвестный игрок'}
-                      </span>
-                    </>
+                <div className="flex items-center gap-2 mb-1">
+                  {msg.sender?.avatar_url && (
+                    <img 
+                      src={msg.sender.avatar_url} 
+                      alt={msg.sender?.username || 'Участник'} 
+                      className="w-5 h-5 rounded-full"
+                    />
                   )}
-                  <span className="text-xs text-gray-400">
-                    {formatTime(msg.created_at)}
+                  <span className="text-xs font-medium text-gray-300">
+                    {msg.sender?.username || 'Участник'}
+                  </span>
+                  <span className="text-xs text-gray-500 ml-auto">
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <p className="text-sm break-words">{msg.message}</p>
+                <p>{msg.message}</p>
               </div>
-            </div>
+            </motion.div>
           ))
         )}
-        <div ref={endOfMessagesRef} />
+        <div ref={messageEndRef} />
       </div>
       
-      <form onSubmit={sendMessage} className="p-3 border-t border-gray-700 flex">
-        <input
-          type="text"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          disabled={!currentUser}
-          placeholder={currentUser ? "Написать сообщение..." : "Войдите, чтобы писать сообщения"}
-          className="flex-1 bg-fc-background/50 border border-fc-muted rounded-l-lg py-2 px-4 text-white focus:outline-none focus:border-fc-accent"
-        />
-        <button
-          type="submit"
-          disabled={!newMessage.trim() || !currentUser}
-          className="bg-fc-accent text-fc-background px-3 rounded-r-lg hover:bg-fc-accent-hover disabled:opacity-50"
-        >
-          <Send size={18} />
-        </button>
+      <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-800 mt-auto">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Напишите сообщение..."
+            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-fc-accent"
+            disabled={!user}
+          />
+          <button
+            type="submit"
+            className="bg-fc-accent px-3 py-2 rounded hover:bg-fc-accent/80 disabled:opacity-50 disabled:hover:bg-fc-accent"
+            disabled={!newMessage.trim() || !user}
+          >
+            <Send size={18} />
+          </button>
+        </div>
+        {!user && (
+          <p className="text-xs text-red-400 mt-1">
+            Необходимо авторизоваться для отправки сообщений
+          </p>
+        )}
       </form>
     </div>
   );

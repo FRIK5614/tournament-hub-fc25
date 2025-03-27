@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const getPlayerMatches = async (tournamentId: string, userId: string) => {
   try {
-    console.log(`[MATCH-SERVICE] Getting matches for player ${userId} in tournament ${tournamentId}`);
+    console.log(`[TOURNAMENT-SERVICE] Getting matches for player ${userId} in tournament ${tournamentId}`);
     
     const { data, error } = await supabase
       .from('matches')
@@ -17,143 +17,185 @@ export const getPlayerMatches = async (tournamentId: string, userId: string) => 
       .order('created_at', { ascending: true });
     
     if (error) {
-      console.error(`[MATCH-SERVICE] Error loading matches:`, error);
+      console.error(`[TOURNAMENT-SERVICE] Error loading player matches:`, error);
       throw error;
     }
     
-    console.log(`[MATCH-SERVICE] Successfully loaded ${data?.length || 0} matches`);
+    console.log(`[TOURNAMENT-SERVICE] Successfully loaded ${data?.length || 0} matches for player`);
     return data || [];
   } catch (error: any) {
-    console.error(`[MATCH-SERVICE] Error in getPlayerMatches:`, error);
-    throw new Error(`Не удалось получить список матчей: ${error.message}`);
+    console.error(`[TOURNAMENT-SERVICE] Error in getPlayerMatches:`, error);
+    throw new Error(`Не удалось получить матчи: ${error.message}`);
   }
 };
 
-export const submitMatchResult = async (
-  matchId: string, 
-  player1Score: number, 
-  player2Score: number, 
-  resultImageUrl: string
-) => {
-  const { data: user } = await supabase.auth.getUser();
-  
-  if (!user?.user) {
-    throw new Error("Необходимо авторизоваться для отправки результатов");
+export const submitMatchResult = async (matchId: string, userId: string, player1Score: number, player2Score: number) => {
+  try {
+    console.log(`[TOURNAMENT-SERVICE] Submitting match result for match ${matchId}`);
+    
+    // Проверяем, что пользователь участвует в матче
+    const { data: match, error: matchError } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('id', matchId)
+      .single();
+      
+    if (matchError) {
+      console.error(`[TOURNAMENT-SERVICE] Error loading match data:`, matchError);
+      throw matchError;
+    }
+    
+    if (match.player1_id !== userId && match.player2_id !== userId) {
+      throw new Error("Вы не являетесь участником этого матча");
+    }
+    
+    // Определяем, является ли пользователь игроком 1 или 2
+    const isPlayer1 = match.player1_id === userId;
+    
+    // В зависимости от игрока обновляем соответствующие поля
+    if (isPlayer1) {
+      const { error } = await supabase
+        .from('matches')
+        .update({
+          player1_score: player1Score,
+          player2_score: player2Score,
+          status: 'awaiting_confirmation'
+        })
+        .eq('id', matchId);
+        
+      if (error) {
+        console.error(`[TOURNAMENT-SERVICE] Error submitting result:`, error);
+        throw error;
+      }
+    } else {
+      // Игрок 2 подтверждает результат
+      const winnerId = player1Score > player2Score 
+        ? match.player1_id 
+        : player2Score > player1Score 
+          ? match.player2_id 
+          : null; // Ничья
+      
+      const { error } = await supabase
+        .from('matches')
+        .update({
+          player1_score: player1Score,
+          player2_score: player2Score,
+          status: 'completed',
+          result_confirmed: true,
+          result_confirmed_by_player2: true,
+          winner_id: winnerId,
+          completed_time: new Date().toISOString()
+        })
+        .eq('id', matchId);
+        
+      if (error) {
+        console.error(`[TOURNAMENT-SERVICE] Error confirming result:`, error);
+        throw error;
+      }
+      
+      // После подтверждения результата начисляем очки победителю
+      if (winnerId) {
+        const { error: pointsError } = await supabase
+          .from('tournament_participants')
+          .update({ points: match.is_final ? 6 : 3 })
+          .eq('tournament_id', match.tournament_id)
+          .eq('user_id', winnerId);
+          
+        if (pointsError) {
+          console.error(`[TOURNAMENT-SERVICE] Error updating points:`, pointsError);
+        }
+      }
+    }
+    
+    console.log(`[TOURNAMENT-SERVICE] Match result successfully submitted`);
+    return { success: true };
+  } catch (error: any) {
+    console.error(`[TOURNAMENT-SERVICE] Error in submitMatchResult:`, error);
+    throw new Error(`Не удалось отправить результат: ${error.message}`);
   }
-  
-  // Get the match details to check if the user is a participant
-  const { data: match, error: matchError } = await supabase
-    .from('matches')
-    .select('*')
-    .eq('id', matchId)
-    .single();
-  
-  if (matchError || !match) {
-    throw new Error("Матч не найден");
-  }
-  
-  // Check if the user is a participant
-  if (match.player1_id !== user.user.id && match.player2_id !== user.user.id) {
-    throw new Error("Вы не являетесь участником этого матча");
-  }
-  
-  // Determine winner
-  const winnerId = player1Score > player2Score ? match.player1_id : match.player2_id;
-  
-  // If user is player1, they're submitting the result
-  const isPlayer1 = match.player1_id === user.user.id;
-  
-  const updateData: {
-    player1_score: number;
-    player2_score: number;
-    result_image_url: string;
-    status: string;
-    winner_id: string;
-    result_confirmed?: boolean;
-    result_confirmed_by_player2?: boolean;
-  } = {
-    player1_score: player1Score,
-    player2_score: player2Score,
-    result_image_url: resultImageUrl,
-    status: 'awaiting_confirmation',
-    winner_id: winnerId
-  };
-  
-  // If user is player2 and confirming the result
-  if (!isPlayer1 && match.player1_score !== null) {
-    updateData.result_confirmed = true;
-    updateData.result_confirmed_by_player2 = true;
-    updateData.status = 'completed';
-  }
-  
-  const { error } = await supabase
-    .from('matches')
-    .update(updateData)
-    .eq('id', matchId);
-  
-  if (error) {
-    console.error("Ошибка при отправке результатов матча:", error);
-    throw new Error("Не удалось отправить результаты матча. Пожалуйста, попробуйте снова.");
-  }
-  
-  return true;
 };
 
-export const confirmMatchResult = async (matchId: string, confirm: boolean) => {
-  const { data: user } = await supabase.auth.getUser();
-  
-  if (!user?.user) {
-    throw new Error("Необходимо авторизоваться для подтверждения результатов");
-  }
-  
-  // Get the match details
-  const { data: match, error: matchError } = await supabase
-    .from('matches')
-    .select('*')
-    .eq('id', matchId)
-    .single();
-  
-  if (matchError || !match) {
-    throw new Error("Матч не найден");
-  }
-  
-  // Check if the user is the second player
-  if (match.player2_id !== user.user.id) {
-    throw new Error("Только второй игрок может подтвердить результат");
-  }
-  
-  if (confirm) {
-    const { error } = await supabase
-      .from('matches')
-      .update({
-        result_confirmed: true,
-        result_confirmed_by_player2: true,
-        status: 'completed'
-      })
-      .eq('id', matchId);
+export const confirmMatchResult = async (matchId: string, userId: string, accept: boolean) => {
+  try {
+    console.log(`[TOURNAMENT-SERVICE] ${accept ? 'Confirming' : 'Rejecting'} match result for match ${matchId}`);
     
-    if (error) {
-      console.error("Ошибка при подтверждении результатов:", error);
-      throw new Error("Не удалось подтвердить результаты. Пожалуйста, попробуйте снова.");
-    }
-  } else {
-    // If the user rejects the result, reset match
-    const { error } = await supabase
+    // Проверяем, что пользователь участвует в матче и результат ожидает подтверждения
+    const { data: match, error: matchError } = await supabase
       .from('matches')
-      .update({
-        player1_score: null,
-        player2_score: null,
-        result_image_url: null,
-        winner_id: null,
-        status: 'scheduled'
-      })
-      .eq('id', matchId);
-    
-    if (error) {
-      console.error("Ошибка при отклонении результатов:", error);
-      throw new Error("Не удалось отклонить результаты. Пожалуйста, попробуйте снова.");
+      .select('*')
+      .eq('id', matchId)
+      .eq('status', 'awaiting_confirmation')
+      .single();
+      
+    if (matchError) {
+      console.error(`[TOURNAMENT-SERVICE] Error loading match data:`, matchError);
+      throw matchError;
     }
+    
+    if (match.player2_id !== userId) {
+      throw new Error("Только игрок 2 может подтвердить результат");
+    }
+    
+    if (accept) {
+      // Подтверждаем результат
+      const winnerId = match.player1_score > match.player2_score 
+        ? match.player1_id 
+        : match.player2_score > match.player1_score 
+          ? match.player2_id 
+          : null; // Ничья
+      
+      const { error } = await supabase
+        .from('matches')
+        .update({
+          status: 'completed',
+          result_confirmed: true,
+          result_confirmed_by_player2: true,
+          winner_id: winnerId,
+          completed_time: new Date().toISOString()
+        })
+        .eq('id', matchId);
+        
+      if (error) {
+        console.error(`[TOURNAMENT-SERVICE] Error confirming result:`, error);
+        throw error;
+      }
+      
+      // После подтверждения результата начисляем очки победителю
+      if (winnerId) {
+        const { error: pointsError } = await supabase
+          .from('tournament_participants')
+          .update({ points: match.is_final ? 6 : 3 })
+          .eq('tournament_id', match.tournament_id)
+          .eq('user_id', winnerId);
+          
+        if (pointsError) {
+          console.error(`[TOURNAMENT-SERVICE] Error updating points:`, pointsError);
+        }
+      }
+    } else {
+      // Отклоняем результат и возвращаем матч в статус "scheduled"
+      const { error } = await supabase
+        .from('matches')
+        .update({
+          status: 'scheduled',
+          player1_score: null,
+          player2_score: null,
+          result_confirmed: false,
+          result_confirmed_by_player2: false,
+          winner_id: null
+        })
+        .eq('id', matchId);
+        
+      if (error) {
+        console.error(`[TOURNAMENT-SERVICE] Error rejecting result:`, error);
+        throw error;
+      }
+    }
+    
+    console.log(`[TOURNAMENT-SERVICE] Match result successfully ${accept ? 'confirmed' : 'rejected'}`);
+    return { success: true };
+  } catch (error: any) {
+    console.error(`[TOURNAMENT-SERVICE] Error in confirmMatchResult:`, error);
+    throw new Error(`Не удалось ${accept ? 'подтвердить' : 'отклонить'} результат: ${error.message}`);
   }
-  
-  return true;
 };

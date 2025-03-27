@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, User, Mail, Lock } from 'lucide-react';
 import Navbar from '@/components/Navbar';
@@ -11,14 +11,48 @@ const Login = () => {
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        navigate('/');
+      }
+    };
+    
+    checkUser();
+  }, [navigate]);
+
+  const validatePassword = () => {
+    if (!isLoginMode && password.length < 6) {
+      setPasswordError('Пароль должен содержать минимум 6 символов');
+      return false;
+    }
+    
+    if (!isLoginMode && password !== confirmPassword) {
+      setPasswordError('Пароли не совпадают');
+      return false;
+    }
+    
+    setPasswordError('');
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validatePassword()) {
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -149,6 +183,31 @@ const Login = () => {
                 </div>
               </div>
               
+              {!isLoginMode && (
+                <div className="space-y-2">
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-200">
+                    Подтвердите пароль
+                  </label>
+                  <div className="relative">
+                    <Lock size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400" />
+                    <input
+                      id="confirmPassword"
+                      type={showPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full bg-fc-background/50 border border-fc-muted rounded-lg py-2 px-4 pl-10 pr-10 text-white focus:outline-none focus:border-fc-accent"
+                      placeholder="Подтвердите пароль"
+                      required
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {passwordError && (
+                <p className="text-red-500 text-sm">{passwordError}</p>
+              )}
+              
               {isLoginMode && (
                 <div className="text-right">
                   <Link to="/forgot-password" className="text-sm text-fc-accent hover:underline">
@@ -175,7 +234,11 @@ const Login = () => {
                 <button
                   type="button"
                   className="text-fc-accent hover:underline"
-                  onClick={() => setIsLoginMode(!isLoginMode)}
+                  onClick={() => {
+                    setIsLoginMode(!isLoginMode);
+                    setPasswordError('');
+                    setConfirmPassword('');
+                  }}
                   disabled={isLoading}
                 >
                   {isLoginMode ? 'Регистрация' : 'Войти'}

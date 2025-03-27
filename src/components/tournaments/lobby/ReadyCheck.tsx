@@ -38,7 +38,7 @@ const ReadyCheck = ({
     return participant.status === 'ready';
   };
 
-  // Check if all players are ready
+  // Check if all players are ready - important: we check actual length
   const allPlayersReady = lobbyParticipants.length === 4 && 
     lobbyParticipants.every(p => isPlayerReady(p));
 
@@ -98,7 +98,7 @@ const ReadyCheck = ({
           {tournamentCreationStatus === 'error' && (
             <div className="text-red-500 flex items-center justify-center">
               <X className="mr-2" size={16} />
-              Ошибка системы. Пробуем другой способ...
+              Ошибка: недостаточно игроков. Пробуем еще...
             </div>
           )}
         </div>
@@ -112,18 +112,26 @@ const ReadyCheck = ({
   const readyCount = readyPlayers.length;
   const totalCount = lobbyParticipants.length;
   
-  console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/${totalCount}`);
-  console.log("[TOURNAMENT-UI] Ready players array:", readyPlayers);
-  console.log("[TOURNAMENT-UI] Ready check participants:", 
-    lobbyParticipants.map(p => ({ 
-      id: p.user_id, 
-      username: p.profile?.username,
-      ready: isPlayerReady(p), 
-      status: p.status 
-    }))
-  );
+  // Enhanced logging to help debug
+  useEffect(() => {
+    console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/${totalCount}`);
+    console.log("[TOURNAMENT-UI] Ready players array:", readyPlayers);
+    console.log("[TOURNAMENT-UI] Ready check participants:", 
+      lobbyParticipants.map(p => ({ 
+        id: p.user_id, 
+        username: p.profile?.username,
+        ready: isPlayerReady(p), 
+        status: p.status 
+      }))
+    );
+    
+    // Critical: Log a warning if we don't have exactly 4 players
+    if (lobbyParticipants.length !== 4) {
+      console.warn(`[TOURNAMENT-UI] Warning: Expected 4 participants but found ${lobbyParticipants.length}`);
+    }
+  }, [readyCount, totalCount, readyPlayers, lobbyParticipants]);
   
-  // Улучшенное отображение для истекшего таймера
+  // Improved display for expired timer
   const renderExpiredTimerMessage = () => {
     if (isCountdownExpired && !tournamentCreationStatus) {
       return (
@@ -136,6 +144,11 @@ const ReadyCheck = ({
           <p className="text-yellow-500 font-medium">
             Время ожидания истекло! Создаем турнир автоматически...
           </p>
+          {lobbyParticipants.length < 4 && (
+            <p className="text-red-400 text-sm mt-1">
+              Внимание: для начала турнира необходимо 4 игрока, сейчас {lobbyParticipants.length}
+            </p>
+          )}
         </motion.div>
       );
     }
@@ -166,6 +179,19 @@ const ReadyCheck = ({
       >
         Подтвердите готовность начать турнир ({readyCount}/{totalCount})
       </motion.p>
+      
+      {/* Display warning if we don't have 4 players */}
+      {totalCount !== 4 && (
+        <motion.div 
+          className="mb-3 p-2 bg-orange-500/20 rounded-md"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          <p className="text-orange-400 text-sm">
+            Внимание: для начала турнира необходимо 4 игрока, сейчас только {totalCount}
+          </p>
+        </motion.div>
+      )}
       
       {renderExpiredTimerMessage()}
       

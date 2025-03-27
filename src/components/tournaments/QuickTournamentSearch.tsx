@@ -64,9 +64,9 @@ const QuickTournamentSearch = () => {
     };
   }, [isSearching, readyCheckActive, handleCancelSearch]);
 
-  // Автоматически запускаем создание турнира, когда таймер истекает
+  // Automatically trigger tournament creation when timer expires
   useEffect(() => {
-    // Отслеживаем переход countdownSeconds через 0
+    // Track countdown transitioning to zero
     if (
       readyCheckActive && 
       lastCountdownSeconds.current !== null && 
@@ -74,9 +74,13 @@ const QuickTournamentSearch = () => {
       countdownSeconds <= 0 && 
       !isCreatingTournament &&
       !tournamentId &&
+      // Critical: Ensure we actually have enough players before trying to create tournament
       lobbyParticipants?.length >= 4
     ) {
-      console.log("[TOURNAMENT-UI] Timer expired, auto-triggering tournament creation");
+      console.log("[TOURNAMENT-UI] Timer expired, auto-triggering tournament creation with players:", 
+        lobbyParticipants.map(p => ({ id: p.user_id, username: p.profile?.username }))
+      );
+      
       checkTournamentCreation();
       
       toast({
@@ -86,7 +90,7 @@ const QuickTournamentSearch = () => {
       });
     }
     
-    // Сохраняем текущее значение для следующего сравнения
+    // Save current value for next comparison
     lastCountdownSeconds.current = countdownSeconds;
   }, [
     countdownSeconds, 
@@ -95,10 +99,11 @@ const QuickTournamentSearch = () => {
     tournamentId, 
     lobbyParticipants?.length, 
     checkTournamentCreation, 
-    toast
+    toast,
+    lobbyParticipants
   ]);
 
-  // Автоматически проверяем создание турнира, если все игроки готовы
+  // Automatically check tournament creation if all players are ready
   useEffect(() => {
     if (
       readyCheckActive && 
@@ -108,6 +113,13 @@ const QuickTournamentSearch = () => {
       readyPlayers?.length >= 4
     ) {
       console.log("[TOURNAMENT-UI] All players ready, triggering tournament creation");
+      console.log("[TOURNAMENT-UI] Players:", 
+        lobbyParticipants.map(p => ({ 
+          id: p.user_id, 
+          username: p.profile?.username,
+          isReady: readyPlayers.includes(p.user_id)
+        }))
+      );
       checkTournamentCreation();
     }
   }, [
@@ -116,7 +128,9 @@ const QuickTournamentSearch = () => {
     isCreatingTournament, 
     tournamentId, 
     lobbyParticipants?.length, 
-    checkTournamentCreation
+    checkTournamentCreation,
+    lobbyParticipants,
+    readyPlayers
   ]);
 
   // Add navigation effect when tournamentId is set

@@ -13,7 +13,7 @@ export const useTournamentCreation = (
 ) => {
   const { toast } = useToast();
   
-  // Добавляем флаг для отслеживания количества попыток создания турнира
+  // Maximum number of creation attempts
   const MAX_CREATION_ATTEMPTS = 3;
 
   const checkTournamentCreation = useCallback(async (attempt = 0) => {
@@ -23,7 +23,7 @@ export const useTournamentCreation = (
         return;
       }
 
-      // Проверка авторизации
+      // Check authentication
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData?.user) {
         console.error("[TOURNAMENT-UI] Authentication required:", authError);
@@ -35,17 +35,27 @@ export const useTournamentCreation = (
         return;
       }
 
-      // Проверяем, все ли игроки готовы - важно! Уменьшаем минимальное количество готовых игроков, 
-      // если таймер истек, чтобы в любом случае попытаться создать турнир
+      // Check if we should force create because timer expired, with reduced requirements
       const shouldForceCreate = state.countdownSeconds <= 0;
-      const minRequiredReady = shouldForceCreate ? 1 : 4; // Если таймер истек, достаточно хотя бы одного игрока
+      // If timer expired, only require 1 ready player instead of 4
+      const minRequiredReady = shouldForceCreate ? 1 : 4; 
+      
+      console.log(`[TOURNAMENT-UI] Current state: ready players=${state.readyPlayers.length}, total participants=${state.lobbyParticipants.length}, force=${shouldForceCreate}`);
+      
+      // Important: Always log the complete participant list to debug
+      console.log("[TOURNAMENT-UI] Current participants:", state.lobbyParticipants.map(p => ({
+        id: p.user_id,
+        username: p.profile?.username,
+        status: p.status,
+        isReady: state.readyPlayers.includes(p.user_id)
+      })));
       
       if (state.readyPlayers.length < minRequiredReady || state.lobbyParticipants.length < 4) {
-        console.log(`[TOURNAMENT-UI] Not enough ready players: ${state.readyPlayers.length}/${state.lobbyParticipants.length}, force: ${shouldForceCreate}`);
+        console.log(`[TOURNAMENT-UI] Not enough ready players or participants: ${state.readyPlayers.length}/${state.lobbyParticipants.length}, force: ${shouldForceCreate}`);
         
-        // Если таймер истек, но у нас есть хотя бы 4 игрока в лобби, пробуем создать турнир
+        // If timer expired but we have at least 4 players in lobby, proceed anyway
         if (shouldForceCreate && state.lobbyParticipants.length >= 4) {
-          console.log(`[TOURNAMENT-UI] Timer expired, forcing tournament creation with ${state.readyPlayers.length} ready players`);
+          console.log(`[TOURNAMENT-UI] Timer expired, forcing tournament creation with ${state.readyPlayers.length} ready players out of ${state.lobbyParticipants.length}`);
         } else {
           return;
         }
@@ -55,7 +65,7 @@ export const useTournamentCreation = (
       dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: true });
       dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'checking' });
 
-      // Дважды проверяем, что турнир еще не был создан
+      // Double-check that tournament hasn't already been created
       const { data: lobby, error: lobbyError } = await supabase
         .from('tournament_lobbies')
         .select('tournament_id, max_players, status, current_players')
@@ -75,11 +85,11 @@ export const useTournamentCreation = (
         return;
       }
 
-      // Если таймер истек, принудительно обновляем статус игроков на ready
+      // If timer expired, force update player status to ready
       if (shouldForceCreate) {
         console.log("[TOURNAMENT-UI] Timer expired, updating all players to ready status");
         try {
-          // Обновляем статус всех участников лобби на ready
+          // Update all lobby participants to ready
           await supabase
             .from('lobby_participants')
             .update({ 
@@ -87,20 +97,72 @@ export const useTournamentCreation = (
               status: 'ready' 
             })
             .eq('lobby_id', state.lobbyId);
+            
+          // Force refresh the ready players list
+          const { data: updatedParticipants } = await supabase
+            .from('lobby_participants')
+            .select('user_id, is_ready, status')
+            .eq('lobby_id', state.lobbyId)
+            .in('status', ['ready']);
+            
+          if (updatedParticipants && updatedParticipants.length > 0) {
+            console.log(`[TOURNAMENT-UI] Updated ${updatedParticipants.length} players to ready status`);
+            
+            // Dispatch the updated ready players
+            const readyPlayerIds = updatedParticipants.map(p => p.user_id);
+            dispatch({ type: 'SET_READY_PLAYERS', payload: readyPlayerIds });
+          }
         } catch (updateError) {
           console.error("[TOURNAMENT-UI] Error updating players ready status:", updateError);
-          // Продолжаем с созданием турнира, несмотря на ошибку
+          // Continue with tournament creation anyway
         }
       }
 
-      // Проверяем еще раз количество игроков в лобби
-      if (lobby && lobby.current_players < 4) {
-        console.log(`[TOURNAMENT-UI] Not enough players to create tournament: ${lobby.current_players}/4`);
+      // Critical fix: Explicitly check for current_players in database, not relying only on local state
+      const { data: participantCount, error: countError } = await supabase
+        .from('lobby_participants')
+        .select('id')
+        .eq('lobby_id', state.lobbyId)
+        .in('status', ['searching', 'ready']);
+        
+      if (countError) {
+        console.error("[TOURNAMENT-UI] Error counting participants:", countError);
+      }
+      
+      const actualPlayerCount = participantCount ? participantCount.length : 0;
+      console.log(`[TOURNAMENT-UI] Actual player count in database: ${actualPlayerCount}`);
+      
+      // Critical check: Only proceed if we truly have enough players
+      if (actualPlayerCount < 4) {
+        console.log(`[TOURNAMENT-UI] Not enough players to create tournament: ${actualPlayerCount}/4`);
+        
+        // Fix: Update the UI to show the actual player count
+        if (state.lobbyParticipants.length !== actualPlayerCount) {
+          console.log(`[TOURNAMENT-UI] Correcting UI player count from ${state.lobbyParticipants.length} to ${actualPlayerCount}`);
+          
+          // Refetch participants to sync UI with database
+          const { data: refreshedParticipants } = await supabase
+            .from('lobby_participants')
+            .select('*, profile:profiles(*)')
+            .eq('lobby_id', state.lobbyId)
+            .in('status', ['searching', 'ready']);
+            
+          if (refreshedParticipants) {
+            dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: refreshedParticipants });
+          }
+        }
+        
         dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'error' });
         
+        toast({
+          title: "Недостаточно игроков",
+          description: `Для создания турнира требуется 4 игрока, сейчас только ${actualPlayerCount}`,
+          variant: "destructive",
+        });
+        
         if (attempt < MAX_CREATION_ATTEMPTS - 1) {
-          // Пробуем еще раз с задержкой
+          // Retry after a delay
           console.log(`[TOURNAMENT-UI] Retrying tournament creation in 2 seconds...`);
           
           setTimeout(() => {
@@ -121,14 +183,14 @@ export const useTournamentCreation = (
         return;
       }
 
-      // Создаем турнир
+      // Create tournament
       dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'creating' });
       
       try {
         console.log("[TOURNAMENT-UI] Creating tournament for lobby:", state.lobbyId);
         const result = await createTournamentWithRetry(state.lobbyId);
         
-        if (result.created) { // This was checking result.success, but the object has created instead
+        if (result.created) { // Fixed: Check result.created instead of result.success
           console.log(`[TOURNAMENT-UI] Tournament created successfully with ID: ${result.tournamentId}`);
           
           // Double-check if the lobby was properly updated with the tournament_id
@@ -148,7 +210,7 @@ export const useTournamentCreation = (
               variant: "default",
             });
           } else if (result.tournamentId) {
-            // Если ID турнира есть в ответе, но не обновился в лобби, обновляем лобби вручную
+            // If tournament ID is in the response but not in the lobby, manually update the lobby
             console.log(`[TOURNAMENT-UI] Manually updating lobby with tournament ID: ${result.tournamentId}`);
             
             await supabase
@@ -170,7 +232,7 @@ export const useTournamentCreation = (
         console.error("[TOURNAMENT-UI] Error creating tournament:", error);
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'failed' });
         
-        // Проверяем турнир после ошибки, возможно он все же был создан
+        // Check if tournament was created despite the error
         const { data: checkLobby } = await supabase
           .from('tournament_lobbies')
           .select('tournament_id')
@@ -184,7 +246,7 @@ export const useTournamentCreation = (
           return;
         }
         
-        // Если это не последняя попытка, пробуем создать турнир еще раз
+        // If not the last attempt, retry tournament creation
         if (attempt < MAX_CREATION_ATTEMPTS - 1) {
           console.log(`[TOURNAMENT-UI] Retrying tournament creation in 3 seconds (attempt ${attempt + 1}/${MAX_CREATION_ATTEMPTS})`);
           
@@ -192,7 +254,7 @@ export const useTournamentCreation = (
             checkTournamentCreation(attempt + 1);
           }, 3000);
         } else {
-          // Максимальное количество попыток исчерпано
+          // Maximum attempts reached
           console.log(`[TOURNAMENT-UI] Max creation attempts (${MAX_CREATION_ATTEMPTS}) reached. Giving up.`);
           
           toast({
@@ -217,7 +279,7 @@ export const useTournamentCreation = (
         variant: "destructive",
       });
       
-      // Если не последняя попытка, повторяем еще раз
+      // If not last attempt, retry
       if (attempt < MAX_CREATION_ATTEMPTS - 1) {
         console.log(`[TOURNAMENT-UI] Retrying after error in 3 seconds (attempt ${attempt + 1}/${MAX_CREATION_ATTEMPTS})`);
         

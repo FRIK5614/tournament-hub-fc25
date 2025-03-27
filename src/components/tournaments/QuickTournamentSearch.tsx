@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,7 @@ const QuickTournamentSearch = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Fetch the current user's ID
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -30,11 +31,13 @@ const QuickTournamentSearch = () => {
     fetchUser();
   }, []);
 
+  // Fetch lobby participants whenever the lobbyId changes
   useEffect(() => {
     if (!lobbyId) return;
 
     const fetchLobbyParticipants = async () => {
       try {
+        // Fetch lobby data
         const { data: lobbyData, error: lobbyError } = await supabase
           .from('tournament_lobbies')
           .select('current_players, status, max_players, tournament_id')
@@ -48,7 +51,7 @@ const QuickTournamentSearch = () => {
         
         console.log("Lobby data:", lobbyData);
         
-        // If tournament is created, navigate to it
+        // If we already have a tournament ID, navigate to it
         if (lobbyData.tournament_id) {
           console.log("Tournament ID found, navigating to:", lobbyData.tournament_id);
           
@@ -65,9 +68,19 @@ const QuickTournamentSearch = () => {
           return;
         }
         
-        setReadyCheckActive(lobbyData.status === 'ready_check');
+        // Enable ready check only when we have reached full player count
+        const isReadyCheckActive = lobbyData.status === 'ready_check' && lobbyData.current_players === lobbyData.max_players;
+        setReadyCheckActive(isReadyCheckActive);
         
-        // Fetch participants separately to get all necessary information
+        if (isReadyCheckActive && !readyCheckActive) {
+          toast({
+            title: "Игроки найдены!",
+            description: "Подтвердите свою готовность к началу турнира.",
+            variant: "default",
+          });
+        }
+        
+        // Fetch participants separately
         const { data: participants, error: participantsError } = await supabase
           .from('lobby_participants')
           .select('id, user_id, lobby_id, is_ready, status')
@@ -84,7 +97,7 @@ const QuickTournamentSearch = () => {
         if (participants && participants.length > 0) {
           const userIds = participants.map(p => p.user_id);
           
-          // Fetch profiles separately
+          // Fetch profiles for all participants
           const { data: profiles, error: profilesError } = await supabase
             .from('profiles')
             .select('id, username, avatar_url')
@@ -93,8 +106,6 @@ const QuickTournamentSearch = () => {
           if (profilesError) {
             console.error("Error fetching profiles:", profilesError);
           }
-          
-          console.log("Profiles data:", profiles);
           
           // Combine participants with their profiles
           const participantsWithProfiles = participants.map(participant => {
@@ -105,40 +116,20 @@ const QuickTournamentSearch = () => {
             };
           });
           
-          console.log("Lobby participants with profiles:", participantsWithProfiles);
           setLobbyParticipants(participantsWithProfiles || []);
           
-          // Update ready players list
+          // Update ready players list (truly ready players)
           const readyPlayerIds = participantsWithProfiles
-            ?.filter(p => p.is_ready)
+            ?.filter(p => p.is_ready && p.status === 'ready')
             .map(p => p.user_id) || [];
           setReadyPlayers(readyPlayerIds);
           
           console.log("Ready players:", readyPlayerIds);
           console.log("Total players:", participantsWithProfiles.length);
           
-          // Check if all players are ready, and we need to manually trigger tournament creation
-          if (readyPlayerIds.length === lobbyData.max_players && lobbyData.status === 'ready_check') {
-            const checkTournament = async () => {
-              // Only check every 2 seconds to avoid too many requests
-              const tournamentId = await checkAllPlayersReady(lobbyId);
-              if (tournamentId && typeof tournamentId === 'string') {
-                console.log("All players ready, tournament created:", tournamentId);
-                
-                toast({
-                  title: "Турнир начинается!",
-                  description: "Все игроки готовы. Переход к турниру...",
-                  variant: "default",
-                });
-                
-                // Navigate to the tournament
-                setTimeout(() => {
-                  navigate(`/tournaments/${tournamentId}`);
-                }, 1000);
-              }
-            };
-            
-            checkTournament();
+          // If all players are ready and we have the right count, check for tournament
+          if (readyPlayerIds.length === lobbyData.max_players && isReadyCheckActive) {
+            checkTournamentCreation();
           }
         } else {
           setLobbyParticipants([]);
@@ -149,7 +140,7 @@ const QuickTournamentSearch = () => {
       }
     };
 
-    // Fetch initially
+    // Initial fetch
     fetchLobbyParticipants();
 
     // Subscribe to changes in lobby participants
@@ -178,8 +169,11 @@ const QuickTournamentSearch = () => {
         console.log("Lobby status changed:", payload);
         const newStatus = payload.new.status;
         const tournamentId = payload.new.tournament_id;
+        const currentPlayers = payload.new.current_players;
+        const maxPlayers = payload.new.max_players;
         
-        if (newStatus === 'ready_check') {
+        // Update UI based on lobby status change
+        if (newStatus === 'ready_check' && currentPlayers === maxPlayers) {
           setReadyCheckActive(true);
           setCountdownSeconds(30); // Reset countdown for ready check
           
@@ -208,8 +202,9 @@ const QuickTournamentSearch = () => {
       supabase.removeChannel(lobbyChannel);
       supabase.removeChannel(lobbyStatusChannel);
     };
-  }, [lobbyId, navigate, toast]);
+  }, [lobbyId, navigate, toast, readyCheckActive]);
 
+  // Retry search if needed
   useEffect(() => {
     if (isSearching && !lobbyId && searchAttempts > 0) {
       const retryTimer = setTimeout(() => {
@@ -220,6 +215,7 @@ const QuickTournamentSearch = () => {
     }
   }, [isSearching, lobbyId, searchAttempts]);
 
+  // Countdown timer for ready check
   useEffect(() => {
     if (!readyCheckActive || countdownSeconds <= 0) return;
     
@@ -230,6 +226,7 @@ const QuickTournamentSearch = () => {
     return () => clearTimeout(timer);
   }, [readyCheckActive, countdownSeconds]);
 
+  // Handle countdown expiration
   useEffect(() => {
     if (readyCheckActive && countdownSeconds === 0) {
       handleCancelSearch();
@@ -239,8 +236,31 @@ const QuickTournamentSearch = () => {
         variant: "destructive",
       });
     }
-  }, [countdownSeconds, readyCheckActive, toast]);
+  }, [countdownSeconds, readyCheckActive]);
 
+  // Function to check if tournament should be created
+  const checkTournamentCreation = useCallback(async () => {
+    if (!lobbyId) return;
+    
+    // Only check every 2 seconds to avoid too many requests
+    const tournamentId = await checkAllPlayersReady(lobbyId);
+    if (tournamentId && typeof tournamentId === 'string') {
+      console.log("All players ready, tournament created:", tournamentId);
+      
+      toast({
+        title: "Турнир начинается!",
+        description: "Все игроки готовы. Переход к турниру...",
+        variant: "default",
+      });
+      
+      // Navigate to the tournament
+      setTimeout(() => {
+        navigate(`/tournaments/${tournamentId}`);
+      }, 1000);
+    }
+  }, [lobbyId, navigate, toast]);
+
+  // Start searching for a tournament
   const handleStartSearch = async (isRetry = false) => {
     try {
       setIsSearching(true);
@@ -273,6 +293,7 @@ const QuickTournamentSearch = () => {
     }
   };
 
+  // Cancel the search
   const handleCancelSearch = async () => {
     if (!lobbyId) {
       setIsSearching(false);
@@ -305,6 +326,7 @@ const QuickTournamentSearch = () => {
     }
   };
 
+  // Mark user as ready
   const handleReadyCheck = async () => {
     if (!lobbyId || isLoading) return;
     
@@ -313,9 +335,9 @@ const QuickTournamentSearch = () => {
       const result = await markUserAsReady(lobbyId);
       console.log("Mark ready result:", result);
       
-      const { data: user } = await supabase.auth.getUser();
-      if (user?.user) {
-        setReadyPlayers(prev => [...prev, user.user.id]);
+      // Add user to ready players list
+      if (currentUserId) {
+        setReadyPlayers(prev => [...prev, currentUserId]);
       }
       
       toast({
@@ -323,6 +345,17 @@ const QuickTournamentSearch = () => {
         description: "Ожидание подтверждения других игроков...",
         variant: "default",
       });
+      
+      // Check if this was the last player and we should create the tournament
+      const { data: lobbyData } = await supabase
+        .from('tournament_lobbies')
+        .select('max_players')
+        .eq('id', lobbyId)
+        .single();
+        
+      if (lobbyData && readyPlayers.length + 1 === lobbyData.max_players) {
+        await checkTournamentCreation();
+      }
     } catch (error: any) {
       toast({
         title: "Ошибка",
@@ -334,6 +367,7 @@ const QuickTournamentSearch = () => {
     }
   };
 
+  // Check if current user is ready
   const isUserReady = () => {
     return currentUserId ? readyPlayers.includes(currentUserId) : false;
   };

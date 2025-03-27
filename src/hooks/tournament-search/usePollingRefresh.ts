@@ -1,6 +1,6 @@
 
 import { useEffect, useCallback, useRef } from 'react';
-import { fetchLobbyStatus, fetchLobbyParticipants } from './utils';
+import { fetchLobbyStatus, fetchLobbyParticipants, fetchReadyPlayers } from './utils';
 import { TournamentSearchAction } from './reducer';
 import { supabase, resetSupabaseConnection } from '@/integrations/supabase/client';
 
@@ -10,11 +10,14 @@ const isProduction = window.location.hostname !== 'localhost' &&
                     !window.location.hostname.includes('127.0.0.1');
 
 // Use a shorter polling interval in production to compensate for any subscription issues
-const POLLING_INTERVAL = isProduction ? 2000 : 3000;
+const POLLING_INTERVAL = isProduction ? 1500 : 2500;
+// Even shorter interval for ready check status which is more time-sensitive
+const READY_CHECK_INTERVAL = isProduction ? 1000 : 2000;
 
 export const usePollingRefresh = (
   isSearching: boolean,
   lobbyId: string | null,
+  readyCheckActive: boolean,
   dispatch: React.Dispatch<TournamentSearchAction>
 ) => {
   const retryCountRef = useRef(0);
@@ -37,6 +40,13 @@ export const usePollingRefresh = (
         const participants = await fetchLobbyParticipants(lobbyId);
         console.log(`[TOURNAMENT-UI] Refreshed participants: ${participants.length}`);
         dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: participants });
+        
+        // Get ready players explicitly - this is crucial for correct ready status display
+        if (status.status === 'ready_check') {
+          const readyPlayers = await fetchReadyPlayers(lobbyId);
+          console.log(`[TOURNAMENT-UI] Updated ready players list:`, readyPlayers);
+          dispatch({ type: 'SET_READY_PLAYERS', payload: readyPlayers });
+        }
         
         // Reset retry counter after successful fetch
         retryCountRef.current = 0;
@@ -81,18 +91,21 @@ export const usePollingRefresh = (
         console.error("[TOURNAMENT-UI] Initial polling refresh error:", err)
       );
       
+      // Use different intervals based on whether we're in ready check mode
+      const interval = readyCheckActive ? READY_CHECK_INTERVAL : POLLING_INTERVAL;
+      
       // Then set up interval for subsequent refreshes
       const refreshInterval = setInterval(() => {
         refreshLobbyData(lobbyId).catch(err => 
           console.error("[TOURNAMENT-UI] Interval polling refresh error:", err)
         );
-      }, POLLING_INTERVAL);
+      }, interval);
       
       return () => {
         clearInterval(refreshInterval);
       };
     }
-  }, [isSearching, lobbyId, refreshLobbyData]);
+  }, [isSearching, lobbyId, refreshLobbyData, readyCheckActive]);
 
   return { refreshLobbyData };
 };

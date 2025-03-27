@@ -15,9 +15,10 @@ export const useSearchSubscriptions = (
   onDataRefresh: RefreshCallback
 ) => {
   const cleanupSubscriptionRef = useRef<(() => void) | null>(null);
-  const channelsRef = useRef<{lobbyChannel: any, lobbyStatusChannel: any}>({
+  const channelsRef = useRef<{lobbyChannel: any, lobbyStatusChannel: any, readyPlayersChannel: any}>({
     lobbyChannel: null,
-    lobbyStatusChannel: null
+    lobbyStatusChannel: null,
+    readyPlayersChannel: null
   });
 
   // Function to log subscription status
@@ -72,14 +73,33 @@ export const useSearchSubscriptions = (
         })
         .subscribe((status) => logSubscriptionStatus(status, "Lobby status channel"));
       
+      // New channel specifically for ready players updates
+      const readyPlayersChannel = supabase
+        .channel(`ready_players_${lobbyId}_${timestamp}_${clientId}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'lobby_participants',
+          filter: `lobby_id=eq.${lobbyId}`
+        }, (payload) => {
+          if (payload.new && payload.new.is_ready !== payload.old?.is_ready) {
+            console.log("[TOURNAMENT-UI] Ready player status changed:", payload.new);
+            onDataRefresh(lobbyId).catch(err => {
+              console.error("[TOURNAMENT-UI] Error refreshing after ready status change:", err);
+            });
+          }
+        })
+        .subscribe((status) => logSubscriptionStatus(status, "Ready players channel"));
+      
       // Store channel references
-      channelsRef.current = { lobbyChannel, lobbyStatusChannel };
+      channelsRef.current = { lobbyChannel, lobbyStatusChannel, readyPlayersChannel };
         
       return () => {
         console.log(`[TOURNAMENT-UI] Cleaning up subscriptions for lobby ${lobbyId}`);
         try {
           supabase.removeChannel(lobbyChannel);
           supabase.removeChannel(lobbyStatusChannel);
+          supabase.removeChannel(readyPlayersChannel);
         } catch (err) {
           console.error("[TOURNAMENT-UI] Error removing channels:", err);
         }
@@ -92,18 +112,23 @@ export const useSearchSubscriptions = (
 
   // Helper to check subscription status
   const checkSubscriptionStatus = useCallback(() => {
-    if (channelsRef.current.lobbyChannel) {
-      const subscriptionStatus = channelsRef.current.lobbyChannel.state;
-      
-      // If we detect a problematic state in production, attempt reset
-      if (isProduction && subscriptionStatus !== 'SUBSCRIBED') {
-        console.warn(`[TOURNAMENT-UI] Detected problematic subscription state: ${subscriptionStatus}`);
+    const channels = Object.values(channelsRef.current).filter(Boolean);
+    
+    for (const channel of channels) {
+      if (channel) {
+        const subscriptionStatus = channel.state;
+        console.log(`[TOURNAMENT-UI] Channel ${channel.topic} status: ${subscriptionStatus}`);
         
-        // Force refresh data even if subscription is in a bad state
-        if (lobbyId) {
-          onDataRefresh(lobbyId).catch(err => {
-            console.error("[TOURNAMENT-UI] Error in manual refresh:", err);
-          });
+        // If we detect a problematic state, attempt reset
+        if (subscriptionStatus !== 'SUBSCRIBED') {
+          console.warn(`[TOURNAMENT-UI] Detected problematic subscription state for ${channel.topic}: ${subscriptionStatus}`);
+          
+          // Force refresh data even if subscription is in a bad state
+          if (lobbyId) {
+            onDataRefresh(lobbyId).catch(err => {
+              console.error("[TOURNAMENT-UI] Error in manual refresh:", err);
+            });
+          }
         }
       }
     }
@@ -126,11 +151,8 @@ export const useSearchSubscriptions = (
         console.error("[TOURNAMENT-UI] Error in initial subscription data refresh:", err);
       });
       
-      // Set up periodic subscription status check in production environments
-      let statusCheckInterval: number | null = null;
-      if (isProduction) {
-        statusCheckInterval = window.setInterval(checkSubscriptionStatus, 5000);
-      }
+      // Set up periodic subscription status check
+      const statusCheckInterval = window.setInterval(checkSubscriptionStatus, 5000);
       
       // Cleanup function
       return () => {

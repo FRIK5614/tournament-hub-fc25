@@ -27,6 +27,11 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
         // Create a clean URL without any timestamp parameters
         const urlObj = new URL(url.toString());
         
+        // Enhanced debug logging for URL in production environments
+        if (window.location.hostname !== 'localhost') {
+          console.log(`[SUPABASE] Fetching URL: ${urlObj.toString()}`);
+        }
+        
         // Remove any parameters that might cause issues with some CDNs or proxies
         const keysToRemove = ['_t', '_cache', 'timestamp'];
         keysToRemove.forEach(key => {
@@ -37,20 +42,37 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
         
         // Set a timeout for the request to prevent hanging
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        const timeoutId = setTimeout(() => {
+          console.error(`[SUPABASE] Request timeout for URL: ${urlObj.toString()}`);
+          controller.abort();
+        }, 15000); // 15 second timeout (shorter than previous 30s)
+        
+        const originalUrl = urlObj.toString();
+        console.log(`[SUPABASE] Request URL: ${originalUrl.substring(0, 200)}${originalUrl.length > 200 ? '...' : ''}`);
         
         return fetch(urlObj.toString(), {
           ...options,
           signal: controller.signal,
           cache: 'no-store', // Force network request every time
-        }).finally(() => {
+          redirect: 'follow',
+        }).then(response => {
           clearTimeout(timeoutId);
+          
+          if (!response.ok) {
+            console.warn(`[SUPABASE] Response not OK: ${response.status} ${response.statusText}`);
+          }
+          
+          return response;
+        }).catch(error => {
+          clearTimeout(timeoutId);
+          console.error(`[SUPABASE] Fetch error: ${error.message || error}`);
+          throw error;
         });
       } catch (error) {
         console.error("[SUPABASE] Error in fetch wrapper:", error);
         // Fall back to original URL if URL parsing fails
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
         
         return fetch(url.toString(), {
           ...options,
@@ -77,8 +99,11 @@ export const resetSupabaseConnection = () => {
   try {
     // Remove all channels
     const channels = supabase.getChannels();
+    console.log(`[SUPABASE] Resetting ${channels.length} channels`);
+    
     channels.forEach(channel => {
       try {
+        console.log(`[SUPABASE] Removing channel: ${channel.topic}`);
         supabase.removeChannel(channel);
       } catch (e) {
         console.error("[SUPABASE] Error removing channel:", e);

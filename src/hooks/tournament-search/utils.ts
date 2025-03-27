@@ -57,6 +57,10 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       const actualParticipants = participants || [];
       console.log(`[TOURNAMENT-UI] Found ${actualParticipants.length} active participants in lobby ${lobbyId}`);
       
+      // Log ready players for debugging
+      const readyPlayers = actualParticipants.filter(p => p.is_ready).map(p => p.user_id);
+      console.log(`[TOURNAMENT-UI] Ready players in lobby ${lobbyId}:`, readyPlayers);
+      
       if (actualParticipants.length > 0) {
         // Get user IDs array
         const userIds = actualParticipants.map(p => p.user_id);
@@ -109,4 +113,31 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
   };
   
   return fetchWithRetry();
+};
+
+// Add a new function to fetch ready players directly
+export const fetchReadyPlayers = async (lobbyId: string): Promise<string[]> => {
+  try {
+    console.log(`[TOURNAMENT-UI] Fetching ready players for lobby ${lobbyId}`);
+    
+    const { data, error } = await supabase
+      .from('lobby_participants')
+      .select('user_id')
+      .eq('lobby_id', lobbyId)
+      .eq('is_ready', true)
+      .in('status', ['searching', 'ready']);
+    
+    if (error) {
+      console.error("[TOURNAMENT-UI] Error fetching ready players:", error);
+      return [];
+    }
+    
+    const readyPlayers = data?.map(p => p.user_id) || [];
+    console.log(`[TOURNAMENT-UI] Found ${readyPlayers.length} ready players in lobby ${lobbyId}:`, readyPlayers);
+    
+    return readyPlayers;
+  } catch (error) {
+    console.error("[TOURNAMENT-UI] Error in fetchReadyPlayers:", error);
+    return [];
+  }
 };

@@ -23,10 +23,11 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     cleanupSubscriptionRef.current = cleanup;
   };
 
-  // Use the polling refresh hook
+  // Use the polling refresh hook with ready check state
   const { refreshLobbyData } = usePollingRefresh(
     state.isSearching,
     state.lobbyId,
+    state.readyCheckActive,
     dispatch
   );
 
@@ -64,6 +65,15 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     state.lobbyId,
     refreshLobbyData
   );
+
+  // Debug logging for state changes
+  useEffect(() => {
+    console.log("[TOURNAMENT-UI] State updated:", {
+      readyPlayers: state.readyPlayers,
+      participants: state.lobbyParticipants.map(p => ({ id: p.user_id, ready: p.is_ready })),
+      readyCheckActive: state.readyCheckActive
+    });
+  }, [state.readyPlayers, state.lobbyParticipants, state.readyCheckActive]);
 
   // Effect to handle cleanup when component unmounts
   useEffect(() => {

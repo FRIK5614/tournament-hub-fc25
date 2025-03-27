@@ -89,17 +89,18 @@ export const searchForQuickTournament = async () => {
     }
     
     // Call the function to get or create a lobby
-    const result = await withRetry(() => 
-      supabase.rpc('match_players_for_quick_tournament')
-    );
+    const { data, error } = await withRetry(async () => {
+      const response = await supabase.rpc('match_players_for_quick_tournament');
+      return response;
+    });
     
-    if (result.error) {
-      console.error("[TOURNAMENT] Error searching for tournament:", result.error);
+    if (error) {
+      console.error("[TOURNAMENT] Error searching for tournament:", error);
       throw new Error("Не удалось найти турнир. Пожалуйста, попробуйте снова.");
     }
     
     // Add the user to the lobby
-    const lobbyId = result.data;
+    const lobbyId = data;
     console.log(`[TOURNAMENT] User ${user.user.id} matched to lobby: ${lobbyId}`);
     
     // Check if the user is already in this lobby
@@ -392,14 +393,15 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
         // Call the RPC function to create a tournament with retries
         console.log(`[TOURNAMENT] Calling create_matches_for_quick_tournament for lobby ${lobbyId}`);
         
-        const result = await withRetry(() => 
-          supabase.rpc('create_matches_for_quick_tournament', {
+        const { data, error } = await withRetry(async () => {
+          const response = await supabase.rpc('create_matches_for_quick_tournament', {
             lobby_id: lobbyId
-          })
-        );
+          });
+          return response;
+        });
         
-        if (result && result.error) {
-          console.error("[TOURNAMENT] Error creating tournament:", result.error);
+        if (error) {
+          console.error("[TOURNAMENT] Error creating tournament:", error);
           return { allReady: true, tournamentId: null };
         }
         
@@ -443,17 +445,21 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
 };
 
 export const getLobbyStatus = async (lobbyId: string) => {
-  const response = await supabase
-    .from('tournament_lobbies')
-    .select('*, lobby_participants(*)')
-    .eq('id', lobbyId)
-    .single();
-  
-  if (response.error) {
-    console.error("[TOURNAMENT] Error getting lobby status:", response.error);
-    throw new Error("Не удалось получить информацию о турнире.");
+  try {
+    const response = await supabase
+      .from('tournament_lobbies')
+      .select('*, lobby_participants(*)')
+      .eq('id', lobbyId)
+      .single();
+    
+    if (response.error) {
+      console.error("[TOURNAMENT] Error getting lobby status:", response.error);
+      throw new Error("Не удалось получить информацию о турнире.");
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error("[TOURNAMENT] Error in getLobbyStatus:", error);
+    throw error;
   }
-  
-  return response.data;
 };
-

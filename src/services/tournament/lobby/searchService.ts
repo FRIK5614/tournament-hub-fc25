@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
 
@@ -25,11 +24,16 @@ export const cleanupStaleLobbyParticipation = async (userId: string) => {
   
   try {
     // Mark all previous participations as 'left'
-    await supabase
+    const { error } = await supabase
       .from('lobby_participants')
       .update({ status: 'left' })
       .eq('user_id', userId)
       .in('status', ['searching', 'ready']);
+      
+    if (error) {
+      console.error('[TOURNAMENT] Error in cleanupStaleLobbyParticipation:', error);
+      return;
+    }
       
     console.log(`[TOURNAMENT] Cleaned up stale participations for user ${userId}`);
   } catch (error) {
@@ -133,6 +137,7 @@ export const searchForQuickTournament = async () => {
             throw new Error("Сервер не вернул ID лобби");
           }
           
+          console.log(`[TOURNAMENT] Successfully found/created lobby: ${data}`);
           return data;
         } catch (err) {
           retries++;
@@ -155,12 +160,19 @@ export const searchForQuickTournament = async () => {
     console.log(`[TOURNAMENT] User ${user.user.id} matched to lobby: ${lobbyId}`);
     
     // Get lobby status
-    const { data: lobbyData } = await supabase
+    const { data: lobbyData, error: lobbyError } = await supabase
       .from('tournament_lobbies')
       .select('status, current_players')
       .eq('id', lobbyId)
       .single();
       
+    if (lobbyError) {
+      console.error(`[TOURNAMENT] Error fetching lobby data:`, lobbyError);
+      throw lobbyError;
+    }
+    
+    console.log(`[TOURNAMENT] Lobby ${lobbyId} status: ${lobbyData?.status}, players: ${lobbyData?.current_players}/4`);
+    
     // If lobby has 4 players but is still in 'waiting' status, update it
     if (lobbyData && lobbyData.current_players === 4 && lobbyData.status === 'waiting') {
       console.log(`[TOURNAMENT] Lobby ${lobbyId} has 4 players but status is 'waiting', updating to 'ready_check'`);
@@ -180,19 +192,23 @@ export const searchForQuickTournament = async () => {
     console.log(`[TOURNAMENT] Lobby ${lobbyId} has status: ${lobbyData?.status}, setting initial status to: ${initialStatus}`);
     
     // Check if the user is already in this lobby
-    const { data: existingParticipant } = await supabase
+    const { data: existingParticipant, error: participantError } = await supabase
       .from('lobby_participants')
       .select('id, status, is_ready')
       .eq('lobby_id', lobbyId)
       .eq('user_id', user.user.id)
       .maybeSingle();
     
+    if (participantError) {
+      console.error(`[TOURNAMENT] Error checking existing participation:`, participantError);
+    }
+    
     if (existingParticipant) {
       console.log(`[TOURNAMENT] User ${user.user.id} already in lobby ${lobbyId} with status: ${existingParticipant.status}`);
       
       // If the participant exists but status is incorrect, update their status
       if (existingParticipant.status !== initialStatus) {
-        await supabase
+        const { error: updateError } = await supabase
           .from('lobby_participants')
           .update({
             status: initialStatus,
@@ -200,13 +216,17 @@ export const searchForQuickTournament = async () => {
           })
           .eq('id', existingParticipant.id);
           
-        console.log(`[TOURNAMENT] Updated participant ${existingParticipant.id} status to '${initialStatus}'`);
+        if (updateError) {
+          console.error(`[TOURNAMENT] Error updating participant status:`, updateError);
+        } else {
+          console.log(`[TOURNAMENT] Updated participant ${existingParticipant.id} status to '${initialStatus}'`);
+        }
       }
     } else {
       console.log(`[TOURNAMENT] Adding user ${user.user.id} to lobby ${lobbyId}`);
       
       // Add player to the new lobby
-      await supabase
+      const { error: insertError } = await supabase
         .from('lobby_participants')
         .insert({
           lobby_id: lobbyId,
@@ -214,6 +234,11 @@ export const searchForQuickTournament = async () => {
           status: initialStatus,
           is_ready: false
         });
+        
+      if (insertError) {
+        console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
+        throw insertError;
+      }
     }
     
     // Explicitly check if lobby is in ready_check status and ensure all participants have status = 'ready'

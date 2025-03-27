@@ -63,25 +63,27 @@ const QuickTournamentSearch = () => {
     }
   }, [tournamentId, navigate]);
 
+  const startSearchWithErrorHandling = () => {
+    console.log("[TOURNAMENT-UI] Start search button clicked");
+    try {
+      handleStartSearch();
+    } catch (error) {
+      console.error("Error starting search:", error);
+      toast({
+        title: "Ошибка поиска",
+        description: "Не удалось начать поиск турнира. Попробуйте позже.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="glass-card p-6">
       <h3 className="text-xl font-semibold mb-4">Быстрый турнир</h3>
       
       {!isSearching && (
         <TournamentIntro 
-          onStartSearch={() => {
-            console.log("[TOURNAMENT-UI] Start search button clicked");
-            try {
-              handleStartSearch();
-            } catch (error) {
-              console.error("Error starting search:", error);
-              toast({
-                title: "Ошибка поиска",
-                description: "Не удалось начать поиск турнира. Попробуйте позже.",
-                variant: "destructive",
-              });
-            }
-          }} 
+          onStartSearch={startSearchWithErrorHandling} 
           isLoading={isLoading} 
         />
       )}

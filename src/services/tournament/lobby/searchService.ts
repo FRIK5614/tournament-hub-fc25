@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
 import { updateLobbyPlayerCount as updateLobbyPlayerCountFromUtils } from "@/hooks/tournament-search/utils";
@@ -62,7 +63,12 @@ export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
     
     const count = participants?.length || 0;
     console.log(`[TOURNAMENT] Lobby ${lobbyId} has ${count} active participants:`, 
-      participants?.map(p => ({ id: p.user_id, status: p.status, ready: p.is_ready })));
+      participants?.map(p => ({ 
+        id: p.user_id, 
+        status: p.status, 
+        ready: p.is_ready 
+      }))
+    );
     
     // Update lobby player count
     const { error: updateError } = await supabase
@@ -113,6 +119,7 @@ export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
  */
 export const searchForQuickTournament = async () => {
   try {
+    console.log('[TOURNAMENT] Starting search for quick tournament...');
     const { data: user } = await supabase.auth.getUser();
     
     if (!user?.user) {
@@ -250,14 +257,14 @@ export const searchForQuickTournament = async () => {
     } else {
       console.log(`[TOURNAMENT] Adding user ${user.user.id} to lobby ${lobbyId}`);
       
-      // Ensure there's no constraint violation by double-checking
-      const { data: doubleCheck } = await supabase
+      // Check for existing participation first
+      const { data: checkParticipant } = await supabase
         .from('lobby_participants')
         .select('id')
         .eq('lobby_id', lobbyId)
         .eq('user_id', user.user.id);
         
-      if (doubleCheck && doubleCheck.length > 0) {
+      if (checkParticipant && checkParticipant.length > 0) {
         console.log(`[TOURNAMENT] User already has a participation record, updating status`);
         
         // Update instead of insert
@@ -270,7 +277,7 @@ export const searchForQuickTournament = async () => {
           .eq('lobby_id', lobbyId)
           .eq('user_id', user.user.id);
       } else {
-        // Add player to the new lobby - using a try/catch to handle potential race conditions
+        // Try to insert new participant
         try {
           const { error: insertError } = await supabase
             .from('lobby_participants')
@@ -282,11 +289,9 @@ export const searchForQuickTournament = async () => {
             });
             
           if (insertError) {
-            // If we get a unique constraint error, the user was added in a race condition
-            if (insertError.code === '23505') {
-              console.log(`[TOURNAMENT] Constraint violation detected, falling back to update`);
+            if (insertError.code === '23505') { // Duplicate key error
+              console.log(`[TOURNAMENT] Duplicate key detected, updating existing record`);
               
-              // Update instead
               await supabase
                 .from('lobby_participants')
                 .update({
@@ -303,7 +308,7 @@ export const searchForQuickTournament = async () => {
         } catch (err) {
           console.error(`[TOURNAMENT] Error handling participant insertion:`, err);
           
-          // One more attempt with update as fallback
+          // Fallback to update
           await supabase
             .from('lobby_participants')
             .update({
@@ -342,27 +347,36 @@ export const searchForQuickTournament = async () => {
     if (!verifyParticipant) {
       console.warn(`[TOURNAMENT] Player doesn't appear to be in lobby after addition, retrying`);
       
-      // Try to add again if verification failed - using insert with error handling
-      try {
-        await supabase
-          .from('lobby_participants')
-          .insert({
-            lobby_id: lobbyId,
-            user_id: user.user.id,
-            status: initialStatus,
-            is_ready: false
-          });
-      } catch (err) {
-        console.error(`[TOURNAMENT] Final attempt at adding participant failed:`, err);
-        // Last resort fallback - try an update
-        await supabase
-          .from('lobby_participants')
-          .update({
-            status: initialStatus,
-            is_ready: false
-          })
-          .eq('lobby_id', lobbyId)
-          .eq('user_id', user.user.id);
+      // Check one more time before trying to add
+      const { data: finalCheck } = await supabase
+        .from('lobby_participants')
+        .select('id')
+        .eq('lobby_id', lobbyId)
+        .eq('user_id', user.user.id);
+        
+      if (!finalCheck || finalCheck.length === 0) {
+        // Final attempt to add player
+        try {
+          await supabase
+            .from('lobby_participants')
+            .insert({
+              lobby_id: lobbyId,
+              user_id: user.user.id,
+              status: initialStatus,
+              is_ready: false
+            });
+        } catch (err) {
+          console.error(`[TOURNAMENT] Final attempt at adding participant failed:`, err);
+          // Last resort fallback - try an update
+          await supabase
+            .from('lobby_participants')
+            .update({
+              status: initialStatus,
+              is_ready: false
+            })
+            .eq('lobby_id', lobbyId)
+            .eq('user_id', user.user.id);
+        }
       }
     }
     

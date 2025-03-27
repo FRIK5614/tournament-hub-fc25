@@ -97,24 +97,6 @@ export const useSearchActions = (
       console.log(`[TOURNAMENT-UI] Current user ID: ${user.user.id}`);
       dispatch({ type: 'SET_CURRENT_USER_ID', payload: user.user.id });
 
-      // First check if user already has a profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .eq('id', user.user.id)
-        .maybeSingle();
-        
-      if (profileError || !profileData) {
-        console.log(`[TOURNAMENT-UI] Creating profile for user ${user.user.id}`);
-        // Create a profile if one doesn't exist
-        await supabase
-          .from('profiles')
-          .insert({
-            id: user.user.id,
-            username: user.user.email?.split('@')[0] || `Player-${user.user.id.substring(0, 6)}`
-          });
-      }
-
       // Search for a quick tournament
       const { lobbyId } = await searchForQuickTournament();
       if (!lobbyId) {
@@ -139,6 +121,12 @@ export const useSearchActions = (
 
       dispatch({ type: 'SET_SEARCHING', payload: true });
       dispatch({ type: 'SET_LOADING', payload: false });
+      
+      toast({
+        title: "Поиск запущен",
+        description: "Ищем других игроков для турнира...",
+        variant: "default",
+      });
     } catch (error: any) {
       console.error("Ошибка при поиске лобби:", error);
       

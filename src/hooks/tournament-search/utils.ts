@@ -1,6 +1,6 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { LobbyParticipant } from "../useTournamentSearch";
+import { LobbyParticipant } from "./types";
 
 export const fetchLobbyStatus = async (lobbyId: string) => {
   const { data, error } = await supabase
@@ -55,11 +55,13 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
   
   console.log(`[TOURNAMENT-UI] Fetched ${profiles?.length || 0} profiles for participants`);
   
-  // Объединяем данные участников с их профилями
-  const participantsWithProfiles = participants.map(participant => {
+  // Объединяем данные участников с их профилями и явно указываем тип
+  const participantsWithProfiles: LobbyParticipant[] = participants.map(participant => {
     const profile = profiles ? profiles.find(p => p.id === participant.user_id) : null;
     return {
       ...participant,
+      // Убеждаемся, что status имеет правильный тип
+      status: participant.status as 'searching' | 'ready' | 'left',
       profile: profile || null
     };
   });

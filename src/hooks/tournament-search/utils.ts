@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { LobbyParticipant } from "./types";
 
@@ -52,17 +51,17 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     is_ready: participant.is_ready || false,
     profile: {
       // Use a default profile if the relation has an error or is missing
-      username: participant.profile && 
-                typeof participant.profile === 'object' && 
-                participant.profile !== null && 
-                'username' in participant.profile 
-                ? String(participant.profile.username || 'Unknown Player') 
+      username: (participant.profile &&
+                typeof participant.profile === 'object' &&
+                participant.profile !== null &&
+                'username' in participant.profile)
+                ? (String((participant.profile as any).username || 'Unknown Player'))
                 : 'Unknown Player',
-      avatar_url: participant.profile && 
-                  typeof participant.profile === 'object' && 
-                  participant.profile !== null && 
-                  'avatar_url' in participant.profile 
-                  ? ((participant.profile.avatar_url || null) as string | null)
+      avatar_url: (participant.profile &&
+                  typeof participant.profile === 'object' &&
+                  participant.profile !== null &&
+                  'avatar_url' in participant.profile)
+                  ? (((participant.profile as any).avatar_url || null) as string | null)
                   : null
     }
   }));
@@ -79,17 +78,17 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
     status: participant.status || 'searching',
     is_ready: participant.is_ready || false,
     profile: {
-      username: participant.profile && 
-                typeof participant.profile === 'object' && 
-                participant.profile !== null && 
-                'username' in participant.profile 
-                ? String(participant.profile.username || 'Unknown Player') 
+      username: (participant.profile &&
+                typeof participant.profile === 'object' &&
+                participant.profile !== null &&
+                'username' in participant.profile)
+                ? (String((participant.profile as any).username || 'Unknown Player'))
                 : 'Unknown Player',
-      avatar_url: participant.profile && 
-                  typeof participant.profile === 'object' && 
-                  participant.profile !== null && 
-                  'avatar_url' in participant.profile 
-                  ? ((participant.profile.avatar_url || null) as string | null)
+      avatar_url: (participant.profile &&
+                  typeof participant.profile === 'object' &&
+                  participant.profile !== null &&
+                  'avatar_url' in participant.profile)
+                  ? (((participant.profile as any).avatar_url || null) as string | null)
                   : null
     }
   }));

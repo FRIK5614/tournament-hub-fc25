@@ -5,6 +5,7 @@ import { Eye, EyeOff, User, Mail, Lock } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const Login = () => {
   const [isLoginMode, setIsLoginMode] = useState(true);
@@ -12,28 +13,61 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
     
-    if (isLoginMode) {
-      // В реальном приложении здесь был бы запрос на авторизацию
+    try {
+      if (isLoginMode) {
+        // Login logic
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) throw error;
+        
+        toast({
+          title: "Авторизация",
+          description: "Вход выполнен успешно",
+          variant: "default",
+        });
+        navigate('/');
+      } else {
+        // Registration logic
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              username,
+            }
+          }
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: "Регистрация",
+          description: "Аккаунт успешно создан. Проверьте вашу почту для подтверждения.",
+          variant: "default",
+        });
+        
+        // Switch to login mode after successful registration
+        setIsLoginMode(true);
+      }
+    } catch (error: any) {
       toast({
-        title: "Авторизация",
-        description: "Вход выполнен успешно",
-        variant: "default",
+        title: isLoginMode ? "Ошибка авторизации" : "Ошибка регистрации",
+        description: error.message || "Произошла ошибка. Пожалуйста, попробуйте снова.",
+        variant: "destructive",
       });
-      navigate('/');
-    } else {
-      // В реальном приложении здесь был бы запрос на регистрацию
-      toast({
-        title: "Регистрация",
-        description: "Аккаунт успешно создан",
-        variant: "default",
-      });
-      navigate('/');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -64,6 +98,7 @@ const Login = () => {
                       className="w-full bg-fc-background/50 border border-fc-muted rounded-lg py-2 px-4 pl-10 text-white focus:outline-none focus:border-fc-accent"
                       placeholder="Выберите имя пользователя"
                       required
+                      disabled={isLoading}
                     />
                   </div>
                 </div>
@@ -83,6 +118,7 @@ const Login = () => {
                     className="w-full bg-fc-background/50 border border-fc-muted rounded-lg py-2 px-4 pl-10 text-white focus:outline-none focus:border-fc-accent"
                     placeholder="Введите email"
                     required
+                    disabled={isLoading}
                   />
                 </div>
               </div>
@@ -101,6 +137,7 @@ const Login = () => {
                     className="w-full bg-fc-background/50 border border-fc-muted rounded-lg py-2 px-4 pl-10 pr-10 text-white focus:outline-none focus:border-fc-accent"
                     placeholder={isLoginMode ? "Введите пароль" : "Создайте пароль"}
                     required
+                    disabled={isLoading}
                   />
                   <button
                     type="button"
@@ -122,9 +159,12 @@ const Login = () => {
               
               <button
                 type="submit"
-                className="w-full bg-fc-accent text-fc-background font-semibold py-2 rounded-lg hover:bg-fc-accent-hover transition-colors"
+                className="w-full bg-fc-accent text-fc-background font-semibold py-2 rounded-lg hover:bg-fc-accent-hover transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                disabled={isLoading}
               >
-                {isLoginMode ? 'Войти' : 'Зарегистрироваться'}
+                {isLoading 
+                  ? (isLoginMode ? 'Выполняется вход...' : 'Регистрация...') 
+                  : (isLoginMode ? 'Войти' : 'Зарегистрироваться')}
               </button>
             </form>
             
@@ -136,6 +176,7 @@ const Login = () => {
                   type="button"
                   className="text-fc-accent hover:underline"
                   onClick={() => setIsLoginMode(!isLoginMode)}
+                  disabled={isLoading}
                 >
                   {isLoginMode ? 'Регистрация' : 'Войти'}
                 </button>

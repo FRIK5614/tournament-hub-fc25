@@ -97,12 +97,17 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
       return { allReady: false, tournamentId: null };
     }
     
-    console.log(`[TOURNAMENT] Lobby ${lobbyId} status: ${lobby.status}, players: ${lobby.current_players}/${lobby.max_players}, tournament: ${lobby.tournament_id || 'none'}`);
-    
     // If tournament is already created, return its ID
     if (lobby.tournament_id) {
       console.log(`[TOURNAMENT] Tournament already exists for lobby ${lobbyId}, ID: ${lobby.tournament_id}`);
       return { allReady: true, tournamentId: lobby.tournament_id };
+    }
+
+    // No tournament but lobby is active - something went wrong
+    if (lobby.status === 'active') {
+      console.log(`[TOURNAMENT] Lobby ${lobbyId} is active but has no tournament. Trying to force create tournament.`);
+      const result = await forceTournamentCreation(lobbyId);
+      return { allReady: true, tournamentId: result.tournamentId };
     }
     
     // Get all participants in the lobby
@@ -137,80 +142,7 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
     if (readyParticipants.length === lobby.max_players && activeParticipants === lobby.max_players) {
       console.log(`[TOURNAMENT] All ${lobby.max_players} players are ready in lobby ${lobbyId}. Creating tournament...`);
       
-      try {
-        // Call the RPC function to create a tournament with retries
-        console.log(`[TOURNAMENT] Calling create_matches_for_quick_tournament for lobby ${lobbyId}`);
-        
-        // First, mark lobby as 'waiting' which is required by the tournament creation function
-        const { error: updateError } = await supabase
-          .from('tournament_lobbies')
-          .update({ status: 'waiting' })
-          .eq('id', lobbyId);
-        
-        if (updateError) {
-          console.error("[TOURNAMENT] Error updating lobby status to waiting:", updateError);
-          return { allReady: true, tournamentId: null };
-        }
-        
-        // Add a delay to ensure the status update is processed
-        await delay(500);
-        
-        // Call RPC function
-        const { data, error } = await withRetry(async () => {
-          return await supabase.rpc('create_matches_for_quick_tournament', {
-            lobby_id: lobbyId
-          });
-        }, 5, 800);  // Increase retries and delay
-        
-        if (error) {
-          console.error("[TOURNAMENT] Error creating tournament:", error);
-          
-          // Check if there's a detailed error message we can log
-          if (error.message) {
-            console.error("[TOURNAMENT] Error message:", error.message);
-          }
-          
-          if (error.code) {
-            console.error("[TOURNAMENT] Error code:", error.code);
-          }
-          
-          return { allReady: true, tournamentId: null };
-        }
-        
-        // Add a delay to ensure tournament is created
-        await delay(1000);
-        
-        // Get the tournament ID that was created
-        const { data: updatedLobby, error: updateError2 } = await supabase
-          .from('tournament_lobbies')
-          .select('tournament_id, status')
-          .eq('id', lobbyId)
-          .single();
-        
-        if (updateError2) {
-          console.error("[TOURNAMENT] Error getting tournament ID:", updateError2);
-          return { allReady: true, tournamentId: null };
-        }
-        
-        if (!updatedLobby?.tournament_id) {
-          console.error("[TOURNAMENT] Tournament not created");
-          return { allReady: true, tournamentId: null };
-        }
-        
-        // Make sure lobby status is 'active'
-        if (updatedLobby.status !== 'active') {
-          await supabase
-            .from('tournament_lobbies')
-            .update({ status: 'active' })
-            .eq('id', lobbyId);
-        }
-        
-        console.log(`[TOURNAMENT] Tournament created successfully! ID: ${updatedLobby.tournament_id}`);
-        return { allReady: true, tournamentId: updatedLobby.tournament_id };
-      } catch (error) {
-        console.error("[TOURNAMENT] Error in tournament creation process:", error);
-        return { allReady: true, tournamentId: null };
-      }
+      return await createTournament(lobbyId);
     }
     
     console.log(`[TOURNAMENT] Not all players are ready yet in lobby ${lobbyId}`);
@@ -218,5 +150,179 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
   } catch (error) {
     console.error("[TOURNAMENT] Error in checkAllPlayersReady:", error);
     return { allReady: false, tournamentId: null };
+  }
+};
+
+/**
+ * Create a tournament for a lobby
+ */
+const createTournament = async (lobbyId: string) => {
+  try {
+    // First, mark lobby as 'waiting' which is required by the tournament creation function
+    const { error: updateError } = await supabase
+      .from('tournament_lobbies')
+      .update({ status: 'waiting' })
+      .eq('id', lobbyId);
+    
+    if (updateError) {
+      console.error("[TOURNAMENT] Error updating lobby status to waiting:", updateError);
+      return { allReady: true, tournamentId: null };
+    }
+    
+    // Add a delay to ensure the status update is processed
+    await delay(500);
+    
+    // Call RPC function with improved retry logic
+    const { data, error } = await withRetry(async () => {
+      console.log(`[TOURNAMENT] Calling create_matches_for_quick_tournament for lobby ${lobbyId}`);
+      return await supabase.rpc('create_matches_for_quick_tournament', {
+        lobby_id: lobbyId
+      });
+    }, 3, 1000);
+    
+    if (error) {
+      console.error("[TOURNAMENT] Error creating tournament:", error);
+      
+      // Check if there's a detailed error message we can log
+      if (error.message) {
+        console.error("[TOURNAMENT] Error message:", error.message);
+      }
+      
+      if (error.code) {
+        console.error("[TOURNAMENT] Error code:", error.code);
+      }
+      
+      // Even if RPC failed, let's check if tournament was actually created
+      const { data: checkLobby, error: checkError } = await supabase
+        .from('tournament_lobbies')
+        .select('tournament_id')
+        .eq('id', lobbyId)
+        .maybeSingle();
+        
+      if (!checkError && checkLobby?.tournament_id) {
+        console.log(`[TOURNAMENT] Tournament was actually created: ${checkLobby.tournament_id}`);
+        return { allReady: true, tournamentId: checkLobby.tournament_id };
+      }
+      
+      // Try direct tournament creation as a fallback
+      return await forceTournamentCreation(lobbyId);
+    }
+    
+    // Add a delay to ensure tournament is created
+    await delay(1000);
+    
+    // Get the tournament ID that was created
+    const { data: updatedLobby, error: updateError2 } = await supabase
+      .from('tournament_lobbies')
+      .select('tournament_id, status')
+      .eq('id', lobbyId)
+      .single();
+    
+    if (updateError2) {
+      console.error("[TOURNAMENT] Error getting tournament ID:", updateError2);
+      return { allReady: true, tournamentId: null };
+    }
+    
+    if (!updatedLobby?.tournament_id) {
+      console.error("[TOURNAMENT] Tournament not created");
+      return await forceTournamentCreation(lobbyId);
+    }
+    
+    // Make sure lobby status is 'active'
+    if (updatedLobby.status !== 'active') {
+      await supabase
+        .from('tournament_lobbies')
+        .update({ status: 'active' })
+        .eq('id', lobbyId);
+    }
+    
+    console.log(`[TOURNAMENT] Tournament created successfully! ID: ${updatedLobby.tournament_id}`);
+    return { allReady: true, tournamentId: updatedLobby.tournament_id };
+  } catch (error) {
+    console.error("[TOURNAMENT] Error in tournament creation process:", error);
+    return { allReady: true, tournamentId: null };
+  }
+};
+
+/**
+ * Force tournament creation as a fallback
+ */
+const forceTournamentCreation = async (lobbyId: string) => {
+  try {
+    console.log(`[TOURNAMENT] Attempting direct tournament creation for lobby ${lobbyId}`);
+    
+    // Get participants to check if we have 4 players
+    const { data: participants } = await supabase
+      .from('lobby_participants')
+      .select('user_id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['ready', 'searching']);
+      
+    if (!participants || participants.length < 4) {
+      console.error(`[TOURNAMENT] Not enough participants: ${participants?.length || 0}`);
+      return { allReady: true, tournamentId: null };
+    }
+    
+    // Create tournament directly
+    const { data: tournament, error: tournamentError } = await supabase
+      .from('tournaments')
+      .insert({
+        title: 'Быстрый турнир',
+        max_participants: 4,
+        status: 'active',
+        type: 'quick',
+        tournament_format: 'quick',
+        lobby_id: lobbyId,
+        current_participants: 4
+      })
+      .select('id')
+      .single();
+      
+    if (tournamentError) {
+      console.error("[TOURNAMENT] Error creating tournament directly:", tournamentError);
+      return { allReady: true, tournamentId: null };
+    }
+    
+    // Update lobby with tournament ID
+    await supabase
+      .from('tournament_lobbies')
+      .update({ 
+        tournament_id: tournament.id, 
+        status: 'active',
+        started_at: new Date().toISOString()
+      })
+      .eq('id', lobbyId);
+      
+    // Add participants
+    for (const participant of participants) {
+      await supabase
+        .from('tournament_participants')
+        .insert({
+          tournament_id: tournament.id,
+          user_id: participant.user_id,
+          status: 'active',
+          points: 0
+        });
+    }
+    
+    // Create matches (round-robin)
+    for (let i = 0; i < participants.length; i++) {
+      for (let j = i + 1; j < participants.length; j++) {
+        await supabase
+          .from('matches')
+          .insert({
+            tournament_id: tournament.id,
+            player1_id: participants[i].user_id,
+            player2_id: participants[j].user_id,
+            status: 'scheduled'
+          });
+      }
+    }
+    
+    console.log(`[TOURNAMENT] Tournament created manually! ID: ${tournament.id}`);
+    return { allReady: true, tournamentId: tournament.id };
+  } catch (error) {
+    console.error("[TOURNAMENT] Error in forceTournamentCreation:", error);
+    return { allReady: true, tournamentId: null };
   }
 };

@@ -65,13 +65,30 @@ export const useReadyCheck = (
   useEffect(() => {
     if (state.readyCheckActive && state.lobbyId && state.lobbyParticipants.length === 4) {
       const checkAllReady = async () => {
-        const allReady = state.lobbyParticipants.every(p => 
-          state.readyPlayers.includes(p.user_id)
-        );
-        
-        if (allReady && !state.isCreatingTournament && !state.tournamentId) {
-          console.log("[TOURNAMENT-UI] All players are ready, triggering tournament creation");
-          dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
+        try {
+          const allReady = state.lobbyParticipants.every(p => 
+            state.readyPlayers.includes(p.user_id)
+          );
+          
+          if (allReady && !state.isCreatingTournament && !state.tournamentId) {
+            console.log("[TOURNAMENT-UI] All players are ready, triggering tournament creation");
+            
+            // First verify no tournament exists yet
+            const { data: lobby } = await supabase
+              .from('tournament_lobbies')
+              .select('tournament_id')
+              .eq('id', state.lobbyId)
+              .maybeSingle();
+              
+            if (lobby?.tournament_id) {
+              console.log(`[TOURNAMENT-UI] Tournament already exists: ${lobby.tournament_id}`);
+              dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
+            } else {
+              dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
+            }
+          }
+        } catch (error) {
+          console.error("[TOURNAMENT-UI] Error checking player readiness:", error);
         }
       };
       
@@ -94,27 +111,54 @@ export const useReadyCheck = (
   // Handle countdown completion
   useEffect(() => {
     if (state.countdownSeconds === 0 && state.readyCheckActive) {
-      dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+      const handleCountdownComplete = async () => {
+        try {
+          // Don't reset ready check active flag yet, wait for tournament creation check
+          // dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+          
+          if (state.readyPlayers.length === state.lobbyParticipants.length) {
+            // First check if tournament already exists
+            const { data: lobby } = await supabase
+              .from('tournament_lobbies')
+              .select('tournament_id')
+              .eq('id', state.lobbyId)
+              .maybeSingle();
+              
+            if (lobby?.tournament_id) {
+              console.log(`[TOURNAMENT-UI] Tournament already exists on countdown completion: ${lobby.tournament_id}`);
+              dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
+            } else {
+              // Use the extracted checkTournamentCreation logic
+              await checkTournamentCreation();
+            }
+          } else {
+            toast({
+              title: "Не все игроки готовы",
+              description: "Не все игроки подтвердили готовность. Поиск отменен.",
+              variant: "destructive",
+            });
+            await handleCancelSearch();
+          }
+          
+          // Now reset the ready check active flag
+          dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+        } catch (error) {
+          console.error("[TOURNAMENT-UI] Error handling countdown completion:", error);
+          dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+        }
+      };
       
-      if (state.readyPlayers.length === state.lobbyParticipants.length) {
-        // Use the extracted checkTournamentCreation logic
-        checkTournamentCreation();
-      } else {
-        toast({
-          title: "Не все игроки готовы",
-          description: "Не все игроки подтвердили готовность. Поиск отменен.",
-          variant: "destructive",
-        });
-        handleCancelSearch();
-      }
+      handleCountdownComplete();
     }
   }, [
     state.countdownSeconds, 
     state.readyCheckActive, 
     state.readyPlayers, 
     state.lobbyParticipants, 
+    state.lobbyId,
     checkTournamentCreation, 
     handleCancelSearch, 
-    toast
+    toast,
+    dispatch
   ]);
 };

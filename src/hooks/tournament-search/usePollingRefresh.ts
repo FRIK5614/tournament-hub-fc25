@@ -1,133 +1,121 @@
 
-import { useEffect, useCallback, useRef } from 'react';
-import { fetchLobbyStatus, fetchLobbyParticipants, fetchReadyPlayers, ensureParticipantStatus } from './utils';
+import { useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { ensureParticipantStatus, parseLobbyParticipants, enrichParticipantsWithProfiles } from './utils';
 import { TournamentSearchAction } from './reducer';
-import { supabase, resetSupabaseConnection } from '@/integrations/supabase/client';
 
-// Determine if we're in a production environment
-const isProduction = window.location.hostname !== 'localhost' && 
-                    !window.location.hostname.includes('preview--') && 
-                    !window.location.hostname.includes('127.0.0.1');
-
-// Use a shorter polling interval in production to compensate for any subscription issues
-const POLLING_INTERVAL = isProduction ? 1000 : 1500;
-// Even shorter interval for ready check status which is more time-sensitive
-const READY_CHECK_INTERVAL = isProduction ? 800 : 1000;
-
-export const usePollingRefresh = (
+export function usePollingRefresh(
   isSearching: boolean,
   lobbyId: string | null,
   readyCheckActive: boolean,
   dispatch: React.Dispatch<TournamentSearchAction>
-) => {
-  const retryCountRef = useRef(0);
-  const lastSuccessfulFetchRef = useRef<number>(Date.now());
-  const lastReadyCheckRef = useRef<number>(0);
-  
-  // Function to refresh lobby data with enhanced error handling
+) {
   const refreshLobbyData = useCallback(async (lobbyId: string) => {
     if (!lobbyId) return;
     
     try {
-      console.log(`[TOURNAMENT-UI] Refreshing data for lobby ${lobbyId}`);
+      console.log(`[TOURNAMENT-UI] Refreshing lobby data for ${lobbyId}`);
       
-      // Ensure participant statuses are correct
-      await ensureParticipantStatus(lobbyId);
-      
-      // Fetch lobby status
-      const status = await fetchLobbyStatus(lobbyId);
-      console.log(`[TOURNAMENT-UI] Lobby status: ${status.status}, players: ${status.current_players}/${status.max_players}`);
-      
-      // Check if we have a tournament_id, which means we've successfully created a tournament
-      if (status.tournament_id) {
-        console.log(`[TOURNAMENT-UI] Tournament created! ID: ${status.tournament_id}`);
-        dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
-        dispatch({ type: 'SET_TOURNAMENT_ID', payload: status.tournament_id });
+      // Get the lobby state first
+      const { data: lobby, error: lobbyError } = await supabase
+        .from('tournament_lobbies')
+        .select('id, status, current_players, tournament_id')
+        .eq('id', lobbyId)
+        .maybeSingle();
+        
+      if (lobbyError) {
+        console.error("[TOURNAMENT-UI] Error fetching lobby:", lobbyError);
         return;
       }
       
-      const nowInReadyCheck = status.status === 'ready_check';
-      dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: nowInReadyCheck });
-      
-      // Fetch participants
-      try {
-        const participants = await fetchLobbyParticipants(lobbyId);
-        console.log(`[TOURNAMENT-UI] Refreshed participants: ${participants.length}`);
-        dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: participants });
-        
-        // Get ready players explicitly - this is crucial for correct ready status display
-        if (nowInReadyCheck) {
-          const readyPlayers = await fetchReadyPlayers(lobbyId);
-          console.log(`[TOURNAMENT-UI] Updated ready players list:`, readyPlayers);
-          dispatch({ type: 'SET_READY_PLAYERS', payload: readyPlayers });
-          
-          // If all participants are ready, check tournament creation
-          const allReady = readyPlayers.length === participants.length && participants.length === status.max_players;
-          if (allReady && Date.now() - lastReadyCheckRef.current > 3000) {
-            lastReadyCheckRef.current = Date.now();
-            console.log('[TOURNAMENT-UI] All players ready! Checking tournament creation...');
-            dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
-          }
-        }
-        
-        // Reset retry counter after successful fetch
-        retryCountRef.current = 0;
-        lastSuccessfulFetchRef.current = Date.now();
-      } catch (err) {
-        console.error("[TOURNAMENT-UI] Error refreshing participants:", err);
-        handleRefreshError(err);
+      // If tournament exists, update state
+      if (lobby?.tournament_id) {
+        console.log(`[TOURNAMENT-UI] Found tournament ID during refresh: ${lobby.tournament_id}`);
+        dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
       }
-    } catch (error) {
-      console.error("[TOURNAMENT-UI] Error refreshing lobby data:", error);
-      handleRefreshError(error);
-    }
-  }, [dispatch]);
-
-  // Helper function to handle refresh errors with progressive recovery
-  const handleRefreshError = useCallback((error: any) => {
-    retryCountRef.current += 1;
-    console.warn(`[TOURNAMENT-UI] Refresh retry count: ${retryCountRef.current}`);
-    
-    // If we've had multiple failures in a row, try more aggressive recovery
-    if (retryCountRef.current >= 3) {
-      console.warn("[TOURNAMENT-UI] Multiple refresh failures, attempting connection reset");
-      resetSupabaseConnection();
       
-      // If it's been more than 10 seconds since successful fetch, show an error
-      const timeSinceLastSuccess = Date.now() - lastSuccessfulFetchRef.current;
-      if (timeSinceLastSuccess > 10000) {
-        console.error("[TOURNAMENT-UI] Connection issues detected, notifying user");
+      // If lobby status is ready_check but our state doesn't reflect that, update it
+      if (lobby?.status === 'ready_check' && !readyCheckActive) {
+        console.log('[TOURNAMENT-UI] Updating state to ready_check from polling');
+        dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
+        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });
+      }
+      
+      // Get all participants with their profiles
+      const { data: participants, error: participantsError } = await supabase
+        .from('lobby_participants')
+        .select(`
+          id,
+          user_id,
+          lobby_id,
+          status,
+          is_ready,
+          profile:profiles(id, username, avatar_url)
+        `)
+        .eq('lobby_id', lobbyId)
+        .in('status', ['searching', 'ready']);
+        
+      if (participantsError) {
+        console.error("[TOURNAMENT-UI] Error fetching participants:", participantsError);
+        return;
+      }
+      
+      if (!participants || participants.length === 0) {
+        console.log("[TOURNAMENT-UI] No participants found during refresh");
+        return;
+      }
+      
+      // Enhance participants with missing profile data if needed
+      const enhancedParticipants = await enrichParticipantsWithProfiles(participants);
+      
+      // Parse the participants into the expected format
+      const parsedParticipants = parseLobbyParticipants(enhancedParticipants);
+      
+      // During ready check, ensure all participants have status 'ready'
+      if (readyCheckActive || lobby?.status === 'ready_check') {
+        await ensureParticipantStatus(parsedParticipants, lobbyId);
+        
+        // Re-fetch after ensuring status
+        const { data: updatedParticipants } = await supabase
+          .from('lobby_participants')
+          .select(`
+            id,
+            user_id,
+            lobby_id,
+            status,
+            is_ready,
+            profile:profiles(id, username, avatar_url)
+          `)
+          .eq('lobby_id', lobbyId)
+          .in('status', ['searching', 'ready']);
+          
+        if (updatedParticipants && updatedParticipants.length > 0) {
+          const enhancedUpdatedParticipants = await enrichParticipantsWithProfiles(updatedParticipants);
+          dispatch({ 
+            type: 'SET_LOBBY_PARTICIPANTS',
+            payload: parseLobbyParticipants(enhancedUpdatedParticipants)
+          });
+        }
+      } else {
+        // Update participant state
         dispatch({ 
-          type: 'SET_TOURNAMENT_CREATION_STATUS', 
-          payload: 'error' 
+          type: 'SET_LOBBY_PARTICIPANTS',
+          payload: parsedParticipants
         });
       }
+      
+      // Update ready players list
+      const readyPlayers = parsedParticipants
+        .filter(p => p.is_ready)
+        .map(p => p.user_id);
+        
+      dispatch({ type: 'SET_READY_PLAYERS', payload: readyPlayers });
+      
+      console.log(`[TOURNAMENT-UI] Refreshed ${parsedParticipants.length} participants (${readyPlayers.length} ready)`);
+    } catch (error) {
+      console.error("[TOURNAMENT-UI] Error refreshing lobby data:", error);
     }
-  }, [dispatch]);
-
-  // Periodically refresh lobby data even if subscriptions fail
-  useEffect(() => {
-    if (isSearching && lobbyId) {
-      // Initial fetch immediately
-      refreshLobbyData(lobbyId).catch(err => 
-        console.error("[TOURNAMENT-UI] Initial polling refresh error:", err)
-      );
-      
-      // Use different intervals based on whether we're in ready check mode
-      const interval = readyCheckActive ? READY_CHECK_INTERVAL : POLLING_INTERVAL;
-      
-      // Then set up interval for subsequent refreshes
-      const refreshInterval = setInterval(() => {
-        refreshLobbyData(lobbyId).catch(err => 
-          console.error("[TOURNAMENT-UI] Interval polling refresh error:", err)
-        );
-      }, interval);
-      
-      return () => {
-        clearInterval(refreshInterval);
-      };
-    }
-  }, [isSearching, lobbyId, refreshLobbyData, readyCheckActive]);
-
+  }, [readyCheckActive, dispatch]);
+  
   return { refreshLobbyData };
-};
+}

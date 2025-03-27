@@ -39,49 +39,54 @@ const ReadyCheck = ({
   const allPlayersReady = lobbyParticipants.length > 0 && 
     lobbyParticipants.every(p => isPlayerReady(p));
 
+  // Check if countdown has expired
+  const isCountdownExpired = countdownSeconds <= 0;
+
   // Render tournament creation status
   const renderTournamentCreationStatus = () => {
-    if (allPlayersReady && (!tournamentCreationStatus || tournamentCreationStatus === 'waiting')) {
+    if (isCountdownExpired || allPlayersReady) {
+      if (!tournamentCreationStatus || tournamentCreationStatus === 'waiting') {
+        return (
+          <div className="my-2 text-center">
+            <div className="text-yellow-500 flex items-center justify-center">
+              <Loader2 className="mr-2 animate-spin" size={16} />
+              Создание турнира...
+            </div>
+          </div>
+        );
+      }
+      
       return (
         <div className="my-2 text-center">
-          <div className="text-yellow-500 flex items-center justify-center">
-            <Loader2 className="mr-2 animate-spin" size={16} />
-            Создание турнира...
-          </div>
+          {tournamentCreationStatus === 'checking' && (
+            <div className="text-yellow-500 flex items-center justify-center">
+              <Loader2 className="mr-2 animate-spin" size={16} />
+              Подготовка турнира...
+            </div>
+          )}
+          {tournamentCreationStatus === 'created' && (
+            <div className="text-green-500 flex items-center justify-center">
+              <Check className="mr-2" size={16} />
+              Турнир создан! Переход...
+            </div>
+          )}
+          {tournamentCreationStatus === 'failed' && (
+            <div className="text-orange-500 flex items-center justify-center">
+              <AlertTriangle className="mr-2" size={16} />
+              Ошибка создания турнира. Повторная попытка...
+            </div>
+          )}
+          {tournamentCreationStatus === 'error' && (
+            <div className="text-red-500 flex items-center justify-center">
+              <X className="mr-2" size={16} />
+              Ошибка системы. Пробуем другой способ...
+            </div>
+          )}
         </div>
       );
     }
     
-    if (!tournamentCreationStatus || tournamentCreationStatus === 'waiting') return null;
-    
-    return (
-      <div className="my-2 text-center">
-        {tournamentCreationStatus === 'checking' && (
-          <div className="text-yellow-500 flex items-center justify-center">
-            <Loader2 className="mr-2 animate-spin" size={16} />
-            Подготовка турнира...
-          </div>
-        )}
-        {tournamentCreationStatus === 'created' && (
-          <div className="text-green-500 flex items-center justify-center">
-            <Check className="mr-2" size={16} />
-            Турнир создан! Переход...
-          </div>
-        )}
-        {tournamentCreationStatus === 'failed' && (
-          <div className="text-red-500 flex items-center justify-center">
-            <AlertTriangle className="mr-2" size={16} />
-            Ошибка создания турнира. Повторная попытка...
-          </div>
-        )}
-        {tournamentCreationStatus === 'error' && (
-          <div className="text-red-500 flex items-center justify-center">
-            <X className="mr-2" size={16} />
-            Ошибка системы. Попробуйте снова.
-          </div>
-        )}
-      </div>
-    );
+    return null;
   };
 
   // Count ready players for debugging
@@ -104,11 +109,13 @@ const ReadyCheck = ({
       <h4 className="text-lg font-medium mb-2">Все игроки найдены!</h4>
       <p className="text-gray-300 mb-2">Подтвердите готовность начать турнир ({readyCount}/{totalCount})</p>
       
-      <div className="flex justify-center mb-4">
-        <Badge variant="outline" className="bg-yellow-500/20 border-yellow-500 px-3 py-1 rounded-full text-sm">
-          {countdownSeconds} сек.
-        </Badge>
-      </div>
+      {!isCountdownExpired && (
+        <div className="flex justify-center mb-4">
+          <Badge variant="outline" className="bg-yellow-500/20 border-yellow-500 px-3 py-1 rounded-full text-sm">
+            {countdownSeconds} сек.
+          </Badge>
+        </div>
+      )}
       
       <div className="grid grid-cols-2 gap-4 mb-4">
         {lobbyParticipants.map((participant, idx) => (
@@ -146,7 +153,7 @@ const ReadyCheck = ({
       {renderTournamentCreationStatus()}
       
       <div className="flex gap-3 justify-center">
-        {!isUserReady && (
+        {!isUserReady && !isCountdownExpired && (
           <Button 
             variant="default"
             className="bg-green-600 hover:bg-green-700"

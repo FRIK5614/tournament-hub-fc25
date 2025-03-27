@@ -1,10 +1,9 @@
 
-import { useCallback } from 'react';
 import { supabase } from "@/integrations/supabase/client";
-import { LobbyParticipant, TournamentSearchState } from './types';
+import { LobbyParticipant } from './types';
 
 export const fetchLobbyStatus = async (lobbyId: string) => {
-  console.log(`[TOURNAMENT-UI] Fetching participants for lobby ${lobbyId}`);
+  console.log(`[TOURNAMENT-UI] Fetching status for lobby ${lobbyId}`);
   
   const { data: lobbyData, error: lobbyError } = await supabase
     .from('tournament_lobbies')
@@ -53,7 +52,13 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       const profile = profiles?.find(p => p.id === participant.user_id);
       return {
         ...participant,
-        profile: profile || { username: 'Игрок', avatar_url: null }
+        profile: profile ? { 
+          username: profile.username || 'Игрок', 
+          avatar_url: profile.avatar_url 
+        } : { 
+          username: 'Игрок', 
+          avatar_url: null 
+        }
       };
     });
   }

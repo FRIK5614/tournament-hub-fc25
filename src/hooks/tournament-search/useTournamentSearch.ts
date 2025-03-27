@@ -49,6 +49,11 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         variant: "destructive",
       });
     } finally {
+      // Always clean up any subscriptions when canceling
+      if (cleanupSubscriptionRef.current) {
+        cleanupSubscriptionRef.current();
+        cleanupSubscriptionRef.current = null;
+      }
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, [state.lobbyId, toast]);
@@ -90,39 +95,65 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     dispatch({ type: 'SET_SEARCH_ATTEMPTS', payload: isRetry ? state.searchAttempts + 1 : 0 });
 
     try {
+      // Clean up any existing subscriptions before starting new search
+      if (cleanupSubscriptionRef.current) {
+        cleanupSubscriptionRef.current();
+        cleanupSubscriptionRef.current = null;
+      }
+      
+      console.log("[TOURNAMENT-UI] Starting tournament search, isRetry:", isRetry);
+      
       const { data: user } = await supabase.auth.getUser();
       if (!user?.user) {
         throw new Error("Пользователь не авторизован");
       }
       dispatch({ type: 'SET_CURRENT_USER_ID', payload: user.user.id });
 
+      // Search for a quick tournament
       const { lobbyId } = await searchForQuickTournament();
       if (!lobbyId) {
         throw new Error("Не удалось найти подходящее лобби");
       }
       
+      console.log(`[TOURNAMENT-UI] Found lobby: ${lobbyId}`);
       dispatch({ type: 'SET_LOBBY_ID', payload: lobbyId });
       
       // Fetch initial lobby status and participants
-      const initialLobbyStatus = await fetchLobbyStatus(lobbyId);
-      dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: initialLobbyStatus.status === 'ready_check' });
-      dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });  // Default countdown value
+      try {
+        const initialLobbyStatus = await fetchLobbyStatus(lobbyId);
+        dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: initialLobbyStatus.status === 'ready_check' });
+        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });  // Default countdown value
 
-      const initialParticipants = await fetchLobbyParticipants(lobbyId);
-      dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: initialParticipants });
+        const initialParticipants = await fetchLobbyParticipants(lobbyId);
+        dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: initialParticipants });
+      } catch (error) {
+        console.error("[TOURNAMENT-UI] Error fetching initial lobby data:", error);
+        // Continue anyway to avoid blocking the search process
+      }
 
       // Setup real-time subscriptions - store the cleanup function in the ref
-      if (cleanupSubscriptionRef.current) {
-        cleanupSubscriptionRef.current(); // Clean up existing subscription if any
-      }
-      
       const cleanup = setupLobbySubscriptions(lobbyId, () => {
-        fetchLobbyStatus(lobbyId).then(status => {
-          dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
-          fetchLobbyParticipants(lobbyId).then(participants => {
+        // Create an interval to poll for updates in case the realtime subscription fails
+        const pollInterval = setInterval(async () => {
+          try {
+            const status = await fetchLobbyStatus(lobbyId);
+            dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
+            const participants = await fetchLobbyParticipants(lobbyId);
             dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: participants });
-          });
-        });
+            
+            // Clear interval if we're no longer searching or have a successful connection
+            if (!state.isSearching) {
+              clearInterval(pollInterval);
+            }
+          } catch (error) {
+            console.error("[TOURNAMENT-UI] Error polling lobby data:", error);
+          }
+        }, 3000); // Poll every 3 seconds
+        
+        return () => {
+          clearInterval(pollInterval);
+          console.log("[TOURNAMENT-UI] Polling interval cleared");
+        };
       });
       
       cleanupSubscriptionRef.current = cleanup;
@@ -137,14 +168,30 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         variant: "destructive",
       });
       dispatch({ type: 'SET_LOADING', payload: false });
+      
+      // Show retry toast after a failure
+      toast({
+        title: "Повторная попытка поиска",
+        description: "Возникла проблема при поиске. Пробуем еще раз...",
+        variant: "default",
+      });
+      
+      // Automatically retry after a short delay (only once)
+      if (!isRetry) {
+        setTimeout(() => {
+          handleStartSearch(true);
+        }, 2000);
+      }
     }
-  }, [toast, state.searchAttempts]);
+  }, [toast, state.searchAttempts, state.isSearching]);
 
   // Effect to handle cleanup when component unmounts
   useEffect(() => {
     return () => {
       if (cleanupSubscriptionRef.current) {
+        console.log("[TOURNAMENT-UI] Component unmounting, cleaning up subscriptions");
         cleanupSubscriptionRef.current();
+        cleanupSubscriptionRef.current = null;
       }
     };
   }, []);
@@ -183,6 +230,29 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       }
     }
   }, [state.countdownSeconds, state.readyCheckActive, state.readyPlayers, state.lobbyParticipants, checkTournamentCreation, handleCancelSearch, toast]);
+
+  // Periodically refresh lobby data even if subscriptions fail
+  useEffect(() => {
+    if (state.isSearching && state.lobbyId) {
+      const refreshInterval = setInterval(async () => {
+        try {
+          console.log(`[TOURNAMENT-UI] Periodic refresh of lobby ${state.lobbyId} data`);
+          const status = await fetchLobbyStatus(state.lobbyId);
+          dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
+          
+          const participants = await fetchLobbyParticipants(state.lobbyId);
+          console.log(`[TOURNAMENT-UI] Refreshed participants: ${participants.length}`);
+          dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: participants });
+        } catch (error) {
+          console.error("[TOURNAMENT-UI] Error in periodic refresh:", error);
+        }
+      }, 5000); // Every 5 seconds
+      
+      return () => {
+        clearInterval(refreshInterval);
+      };
+    }
+  }, [state.isSearching, state.lobbyId]);
 
   return {
     isSearching: state.isSearching,

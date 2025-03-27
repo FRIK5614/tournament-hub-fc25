@@ -10,27 +10,10 @@ import {
 } from '@/services/tournament';
 import { fetchLobbyStatus, fetchLobbyParticipants } from './utils';
 import { TournamentSearchState } from './types';
-import { TournamentSearchAction } from './reducer';
+import { TournamentSearchAction, initialState } from './reducer';
 import { useSearchActions } from './useSearchActions';
 import { useReadyCheck } from './useReadyCheck';
 import { useTournamentCreation } from './useTournamentCreation';
-
-const initialState: TournamentSearchState = {
-  isSearching: false,
-  readyCheckActive: false,
-  countdownSeconds: 120,
-  lobbyId: null,
-  lobbyParticipants: [],
-  readyPlayers: [],
-  currentUserId: null,
-  isCreatingTournament: false,
-  tournamentCreationStatus: '',
-  tournamentId: null,
-  isLoading: false,
-  searchAttempts: 0,
-  checkTournamentTrigger: false,
-  creationAttempts: 0
-};
 
 export const useTournamentSearch = () => {
   const [state, dispatch] = useState<TournamentSearchState>(initialState);
@@ -88,7 +71,7 @@ export const useTournamentSearch = () => {
     refreshLobbyData
   );
   
-  // Fix: Convert the trigger function to return a Promise
+  // Return a Promise function for checkTournamentTrigger
   const triggerTournamentCheck = useCallback(async (): Promise<void> => {
     dispatch(prevState => ({
       ...prevState,
@@ -111,7 +94,15 @@ export const useTournamentSearch = () => {
   );
 
   return {
-    ...state,
+    isSearching: state.isSearching,
+    readyCheckActive: state.readyCheckActive,
+    countdownSeconds: state.countdownSeconds,
+    lobbyParticipants: state.lobbyParticipants || [],
+    readyPlayers: state.readyPlayers || [],
+    isLoading: state.isLoading,
+    tournamentCreationStatus: state.tournamentCreationStatus || '',
+    isCreatingTournament: state.isCreatingTournament,
+    tournamentId: state.tournamentId,
     handleStartSearch,
     handleCancelSearch,
     handleReadyCheck,

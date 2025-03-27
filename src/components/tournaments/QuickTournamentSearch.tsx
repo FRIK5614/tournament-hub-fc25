@@ -23,13 +23,13 @@ const QuickTournamentSearch = () => {
     isUserReady
   } = useTournamentSearch();
 
-  // Debug logging
+  // Debug logging with null checks
   useEffect(() => {
     console.log("[TOURNAMENT-UI] QuickTournamentSearch render state:", {
       isSearching,
       readyCheckActive,
-      participantsCount: lobbyParticipants.length,
-      readyPlayersCount: readyPlayers.length,
+      participantsCount: lobbyParticipants?.length || 0,
+      readyPlayersCount: readyPlayers?.length || 0,
       isLoading,
       tournamentCreationStatus,
       isCreatingTournament
@@ -49,7 +49,7 @@ const QuickTournamentSearch = () => {
       
       {isSearching && !readyCheckActive && (
         <TournamentSearchStatus 
-          lobbyParticipants={lobbyParticipants} 
+          lobbyParticipants={lobbyParticipants || []} 
           isLoading={isLoading}
           onCancel={handleCancelSearch}
           onRetry={() => handleStartSearch(true)}
@@ -59,8 +59,8 @@ const QuickTournamentSearch = () => {
       {readyCheckActive && (
         <ReadyCheck 
           countdownSeconds={countdownSeconds}
-          lobbyParticipants={lobbyParticipants}
-          readyPlayers={readyPlayers}
+          lobbyParticipants={lobbyParticipants || []}
+          readyPlayers={readyPlayers || []}
           isUserReady={isUserReady()}
           isLoading={isLoading}
           tournamentCreationStatus={tournamentCreationStatus}

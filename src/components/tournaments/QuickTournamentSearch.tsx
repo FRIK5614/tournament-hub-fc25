@@ -39,9 +39,10 @@ const QuickTournamentSearch = () => {
       isLoading,
       tournamentCreationStatus,
       isCreatingTournament,
+      tournamentId,
       lobbyParticipants
     });
-  }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, tournamentCreationStatus, isCreatingTournament]);
+  }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, tournamentCreationStatus, isCreatingTournament, tournamentId]);
 
   // Handle page close during search
   useEffect(() => {

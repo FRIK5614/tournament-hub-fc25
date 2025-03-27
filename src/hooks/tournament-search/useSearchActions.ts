@@ -83,6 +83,7 @@ export const useSearchActions = (
 
   const handleStartSearch = useCallback(async (isRetry: boolean = false): Promise<void> => {
     console.log("[TOURNAMENT-UI] handleStartSearch called, isRetry:", isRetry);
+    
     // Устанавливаем loading и сбрасываем предыдущее состояние поиска
     dispatch({ type: 'SET_LOADING', payload: true });
     if (!isRetry) {
@@ -114,18 +115,8 @@ export const useSearchActions = (
       dispatch({ type: 'SET_LOBBY_ID', payload: lobbyId });
       
       // Fetch initial lobby status and participants
-      try {
-        const initialLobbyStatus = await fetchLobbyStatus(lobbyId);
-        dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: initialLobbyStatus.status === 'ready_check' });
-        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // 2 minutes
-
-        const initialParticipants = await fetchLobbyParticipants(lobbyId);
-        console.log(`[TOURNAMENT-UI] Initial participants:`, initialParticipants);
-        dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: initialParticipants });
-      } catch (error) {
-        console.error("[TOURNAMENT-UI] Error fetching initial lobby data:", error);
-      }
-
+      await refreshLobbyData(lobbyId);
+      
       // Установка состояний после успешного поиска
       dispatch({ type: 'SET_LOADING', payload: false });
       
@@ -160,7 +151,7 @@ export const useSearchActions = (
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     }
-  }, [toast, state.searchAttempts, dispatch]);
+  }, [toast, state.searchAttempts, dispatch, refreshLobbyData]);
 
   return {
     handleStartSearch,

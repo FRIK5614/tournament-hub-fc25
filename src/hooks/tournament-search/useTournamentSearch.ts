@@ -3,14 +3,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { 
-  searchForQuickTournament, 
-  markUserAsReady, 
-  leaveQuickTournament
-} from '@/services/tournament';
 import { fetchLobbyStatus, fetchLobbyParticipants } from './utils';
 import { TournamentSearchState } from './types';
-import { TournamentSearchAction, initialState } from './reducer';
+import { TournamentSearchAction, initialState, tournamentSearchReducer } from './reducer';
 import { useSearchActions } from './useSearchActions';
 import { useReadyCheck } from './useReadyCheck';
 import { useTournamentCreation } from './useTournamentCreation';
@@ -44,19 +39,37 @@ export const useTournamentSearch = () => {
   const refreshLobbyData = useCallback(async (lobbyId: string) => {
     try {
       console.log("[TOURNAMENT-UI] Refreshing lobby data for", lobbyId);
+      
+      // Fetch lobby status
       const lobbyStatus = await fetchLobbyStatus(lobbyId);
-      dispatch(prevState => ({
-        ...prevState,
-        readyCheckActive: lobbyStatus.status === 'ready_check',
-        countdownSeconds: 120
-      }));
+      console.log("[TOURNAMENT-UI] Lobby status:", lobbyStatus);
+      
+      dispatch({ 
+        type: 'SET_READY_CHECK_ACTIVE', 
+        payload: lobbyStatus.status === 'ready_check' 
+      });
+      
+      if (lobbyStatus.status === 'ready_check') {
+        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });
+      }
 
+      // Fetch participants
       const participants = await fetchLobbyParticipants(lobbyId);
       console.log("[TOURNAMENT-UI] Fetched participants:", participants);
-      dispatch(prevState => ({
-        ...prevState,
-        lobbyParticipants: participants
-      }));
+      
+      dispatch({ 
+        type: 'SET_LOBBY_PARTICIPANTS', 
+        payload: participants 
+      });
+      
+      // If lobby has tournament_id, set it
+      if (lobbyStatus.tournament_id) {
+        console.log(`[TOURNAMENT-UI] Lobby has tournament: ${lobbyStatus.tournament_id}`);
+        dispatch({ 
+          type: 'SET_TOURNAMENT_ID', 
+          payload: lobbyStatus.tournament_id 
+        });
+      }
     } catch (error) {
       console.error("Error refreshing lobby data:", error);
       toast({
@@ -74,17 +87,14 @@ export const useTournamentSearch = () => {
     isUserReady
   } = useSearchActions(
     state, 
-    dispatch as unknown as React.Dispatch<TournamentSearchAction>, 
+    dispatch as React.Dispatch<TournamentSearchAction>, 
     setupCleanupFunction, 
     refreshLobbyData
   );
   
   // Return a Promise function for checkTournamentTrigger
   const triggerTournamentCheck = useCallback(async (): Promise<void> => {
-    dispatch(prevState => ({
-      ...prevState,
-      checkTournamentTrigger: true
-    }));
+    dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
     return Promise.resolve();
   }, []);
   
@@ -93,19 +103,19 @@ export const useTournamentSearch = () => {
     state.isSearching,
     state.lobbyId,
     refreshLobbyData,
-    dispatch as unknown as React.Dispatch<TournamentSearchAction>
+    dispatch as React.Dispatch<TournamentSearchAction>
   );
   
   useReadyCheck(
     state, 
-    dispatch as unknown as React.Dispatch<TournamentSearchAction>, 
+    dispatch as React.Dispatch<TournamentSearchAction>, 
     handleCancelSearch, 
     triggerTournamentCheck
   );
   
   const { checkTournamentCreation } = useTournamentCreation(
     state, 
-    dispatch as unknown as React.Dispatch<TournamentSearchAction>, 
+    dispatch as React.Dispatch<TournamentSearchAction>, 
     handleCancelSearch
   );
 

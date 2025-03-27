@@ -24,6 +24,13 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
     show: { opacity: 1, y: 0 }
   };
 
+  const handleSearchClick = () => {
+    console.log("[TOURNAMENT-UI] Search button clicked in TournamentIntro");
+    if (!isLoading) {
+      onStartSearch();
+    }
+  };
+
   return (
     <div className="text-center">
       <motion.p 
@@ -84,7 +91,7 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
         transition={{ duration: 0.5, delay: 0.6 }}
       >
         <Button 
-          onClick={onStartSearch}
+          onClick={handleSearchClick}
           disabled={isLoading}
           className="w-full bg-fc-accent hover:bg-fc-accent/90 text-fc-background transition-all duration-300 hover:shadow-[0_0_15px_rgba(0,255,0,0.3)]"
         >

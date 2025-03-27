@@ -153,23 +153,38 @@ export function useTournamentCreation(
       }
       
       // Verify all players are ready
-      const { data: participants } = await supabase
+      const { data: participants, error: participantsError } = await supabase
         .from('lobby_participants')
-        .select('user_id, is_ready')
+        .select('user_id, is_ready, status')
         .eq('lobby_id', lobbyId)
         .in('status', ['ready', 'searching']);
         
+      if (participantsError) {
+        console.error("[TOURNAMENT-UI] Error fetching participants:", participantsError);
+        throw participantsError;
+      }
+        
       if (!participants || participants.length < 4) {
-        console.log(`[TOURNAMENT-UI] Not enough ready players: ${participants?.length || 0}/4`);
+        console.log(`[TOURNAMENT-UI] Not enough participants: ${participants?.length || 0}/4`);
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'waiting' });
         dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
         return;
       }
       
-      const readyCount = participants.filter(p => p.is_ready).length;
+      // Вывести информацию о всех игроках и их статусе для отладки
+      console.log(`[TOURNAMENT-UI] Lobby participants:`, participants.map(p => ({ 
+        id: p.user_id, 
+        ready: p.is_ready, 
+        status: p.status 
+      })));
       
-      if (readyCount < 4) {
-        console.log(`[TOURNAMENT-UI] Not all players ready: ${readyCount}/4`);
+      const readyCount = participants.filter(p => p.is_ready).length;
+      const inReadyStatusCount = participants.filter(p => p.status === 'ready').length;
+      
+      console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/4, In 'ready' status: ${inReadyStatusCount}/4`);
+      
+      if (readyCount < 4 || inReadyStatusCount < 4) {
+        console.log(`[TOURNAMENT-UI] Not all players ready: ${readyCount}/4, Status 'ready': ${inReadyStatusCount}/4`);
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'waiting' });
         dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
         return;
@@ -177,7 +192,7 @@ export function useTournamentCreation(
       
       console.log(`[TOURNAMENT-UI] All players are ready, attempting to create tournament`);
       
-      // Use our new service to create the tournament with retries
+      // Use our service to create the tournament with retries
       try {
         const { tournamentId, created } = await createTournamentWithRetry(lobbyId);
         
@@ -188,8 +203,9 @@ export function useTournamentCreation(
           dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
           return;
         }
-      } catch (createError) {
+      } catch (createError: any) {
         console.error("[TOURNAMENT-UI] Error in tournament creation:", createError);
+        console.error("[TOURNAMENT-UI] Error details:", createError.message, createError.code, createError.details);
         
         // Increment creation attempts
         creationAttemptsRef.current += 1;

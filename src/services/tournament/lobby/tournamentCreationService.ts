@@ -91,41 +91,42 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     if (!currentUserIsParticipant) {
       console.log("[TOURNAMENT] Current user is not part of the lobby - adding user");
       
-      // Добавляем текущего пользователя в лобби
       try {
         const { error: joinError } = await supabase
           .from('lobby_participants')
-          .insert({
+          .upsert({
             lobby_id: lobbyId,
             user_id: authData.user.id,
             status: 'ready',
             is_ready: true
-          });
+          }, { onConflict: 'lobby_id,user_id' });
           
         if (joinError) {
-          console.error("[TOURNAMENT] Error adding current user to lobby:", joinError);
-          
-          // Проверяем, не существует ли уже запись (возможный дубликат)
-          if (joinError.code === '23505') { // unique_violation
-            console.log("[TOURNAMENT] User already in lobby, updating status");
-            
-            // Обновляем статус существующей записи
-            await supabase
-              .from('lobby_participants')
-              .update({
-                status: 'ready',
-                is_ready: true
-              })
-              .eq('lobby_id', lobbyId)
-              .eq('user_id', authData.user.id);
-          } else {
-            throw new Error("Не удалось добавить вас в лобби");
-          }
+          console.error("[TOURNAMENT] Error upserting current user to lobby:", joinError);
+          throw new Error("Не удалось добавить вас в лобби");
         }
         
         console.log("[TOURNAMENT] Successfully added/updated current user in lobby");
       } catch (joinError) {
         console.error("[TOURNAMENT] Error joining lobby:", joinError);
+        
+        // Если была ошибка, попытаемся обновить существующую запись
+        try {
+          const { error: updateUserError } = await supabase
+            .from('lobby_participants')
+            .update({
+              status: 'ready',
+              is_ready: true
+            })
+            .eq('lobby_id', lobbyId)
+            .eq('user_id', authData.user.id);
+            
+          if (updateUserError) {
+            console.error("[TOURNAMENT] Error updating user status:", updateUserError);
+          }
+        } catch (updateError) {
+          console.error("[TOURNAMENT] Error updating user:", updateError);
+        }
       }
     }
     
@@ -166,38 +167,47 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
         .eq('id', lobbyId);
         
       // Добавляем всех участников в турнир
-      for (const participant of participantCount) {
-        try {
-          await supabase
-            .from('tournament_participants')
-            .insert({
-              tournament_id: tournamentId,
-              user_id: participant.user_id,
-              status: 'active',
-              points: 0
-            });
-        } catch (error) {
-          console.error(`[TOURNAMENT] Error adding participant ${participant.user_id} to tournament:`, error);
-        }
-      }
+      const participantPromises = participantCount.map(participant => {
+        return supabase
+          .from('tournament_participants')
+          .insert({
+            tournament_id: tournamentId,
+            user_id: participant.user_id,
+            status: 'active',
+            points: 0
+          })
+          .then(({ error }) => {
+            if (error) {
+              console.error(`[TOURNAMENT] Error adding participant ${participant.user_id} to tournament:`, error);
+            }
+          });
+      });
+      
+      await Promise.all(participantPromises);
       
       // Создаем матчи для всех участников
+      const matchPromises = [];
       for (let i = 0; i < participantCount.length; i++) {
         for (let j = i + 1; j < participantCount.length; j++) {
-          try {
-            await supabase
+          matchPromises.push(
+            supabase
               .from('matches')
               .insert({
                 tournament_id: tournamentId,
                 player1_id: participantCount[i].user_id,
                 player2_id: participantCount[j].user_id,
                 status: 'scheduled'
-              });
-          } catch (error) {
-            console.error(`[TOURNAMENT] Error creating match between ${participantCount[i].user_id} and ${participantCount[j].user_id}:`, error);
-          }
+              })
+              .then(({ error }) => {
+                if (error) {
+                  console.error(`[TOURNAMENT] Error creating match between ${participantCount[i].user_id} and ${participantCount[j].user_id}:`, error);
+                }
+              })
+          );
         }
       }
+      
+      await Promise.all(matchPromises);
       
       return { tournamentId, created: true };
     } catch (error) {
@@ -270,16 +280,16 @@ export const createTournamentManually = async (lobbyId: string) => {
       
       if (!isUserInLobby) {
         try {
-          // Добавляем текущего пользователя в лобби
+          // Добавляем текущего пользователя в лобби используя upsert для избежания ошибок дубликатов
           console.log("[TOURNAMENT] Adding current user to lobby as a last resort");
           await supabase
             .from('lobby_participants')
-            .insert({
+            .upsert({
               lobby_id: lobbyId,
               user_id: authData.user.id,
               status: 'ready',
               is_ready: true
-            });
+            }, { onConflict: 'lobby_id,user_id' });
             
           // Пересчитываем количество игроков после добавления
           const { data: newCount } = await supabase
@@ -294,11 +304,8 @@ export const createTournamentManually = async (lobbyId: string) => {
         } catch (joinError) {
           console.error("[TOURNAMENT] Error adding current user to lobby:", joinError);
           
-          // Проверяем, не существует ли уже запись (возможный дубликат)
-          if (joinError.code === '23505') { // unique_violation
-            console.log("[TOURNAMENT] User already in lobby, updating status");
-            
-            // Обновляем статус существующей записи
+          // Пробуем обновить существующую запись, если есть
+          try {
             await supabase
               .from('lobby_participants')
               .update({
@@ -307,8 +314,10 @@ export const createTournamentManually = async (lobbyId: string) => {
               })
               .eq('lobby_id', lobbyId)
               .eq('user_id', authData.user.id);
-          } else {
-            throw new Error("Не удалось добавить вас в лобби");
+              
+          } catch (updateError) {
+            console.error("[TOURNAMENT] Error updating existing record:", updateError);
+            throw new Error("Не удалось добавить вас в лобби и обеспечить необходимое количество игроков");
           }
         }
       } else {
@@ -383,39 +392,48 @@ export const createTournamentManually = async (lobbyId: string) => {
         })
         .eq('id', lobbyId);
         
-      // Добавляем участников в турнир
-      for (const participant of participants) {
-        try {
-          await supabase
-            .from('tournament_participants')
-            .insert({
-              tournament_id: tournamentId,
-              user_id: participant.user_id,
-              status: 'active',
-              points: 0
-            });
-        } catch (error) {
-          console.error(`[TOURNAMENT] Error adding participant ${participant.user_id} to tournament:`, error);
-        }
-      }
+      // Добавляем участников в турнир - используем Promise.all для параллельной обработки
+      const participantPromises = participants.map(participant => {
+        return supabase
+          .from('tournament_participants')
+          .insert({
+            tournament_id: tournamentId,
+            user_id: participant.user_id,
+            status: 'active',
+            points: 0
+          })
+          .then(({ error }) => {
+            if (error) {
+              console.error(`[TOURNAMENT] Error adding participant ${participant.user_id} to tournament:`, error);
+            }
+          });
+      });
       
-      // Создаем матчи для всех участников
+      await Promise.all(participantPromises);
+      
+      // Создаем матчи для всех участников - также параллельно
+      const matchPromises = [];
       for (let i = 0; i < participants.length; i++) {
         for (let j = i + 1; j < participants.length; j++) {
-          try {
-            await supabase
+          matchPromises.push(
+            supabase
               .from('matches')
               .insert({
                 tournament_id: tournamentId,
                 player1_id: participants[i].user_id,
                 player2_id: participants[j].user_id,
                 status: 'scheduled'
-              });
-          } catch (error) {
-            console.error(`[TOURNAMENT] Error creating match between ${participants[i].user_id} and ${participants[j].user_id}:`, error);
-          }
+              })
+              .then(({ error }) => {
+                if (error) {
+                  console.error(`[TOURNAMENT] Error creating match between ${participants[i].user_id} and ${participants[j].user_id}:`, error);
+                }
+              })
+          );
         }
       }
+      
+      await Promise.all(matchPromises);
       
       return { tournamentId, created: true };
     } catch (error) {
@@ -514,26 +532,23 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
     
     if (!isUserInLobby) {
       try {
-        // Добавляем текущего пользователя в лобби
+        // Используем upsert вместо insert для избежания ошибок с дубликатами
         console.log("[TOURNAMENT] Adding current user to lobby");
         await supabase
           .from('lobby_participants')
-          .insert({
+          .upsert({
             lobby_id: lobbyId,
             user_id: authData.user.id,
             status: 'ready',
             is_ready: true
-          });
+          }, { onConflict: 'lobby_id,user_id' });
           
         console.log("[TOURNAMENT] Successfully added current user to lobby");
       } catch (joinError) {
         console.error("[TOURNAMENT] Error adding user to lobby:", joinError);
         
-        // Проверяем, не существует ли уже запись (возможный дубликат)
-        if (joinError.code === '23505') { // unique_violation
-          console.log("[TOURNAMENT] User already in lobby, updating status");
-          
-          // Обновляем статус существующей записи
+        // Пробуем обновить существующую запись
+        try {
           await supabase
             .from('lobby_participants')
             .update({
@@ -542,12 +557,37 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
             })
             .eq('lobby_id', lobbyId)
             .eq('user_id', authData.user.id);
+            
+          console.log("[TOURNAMENT] Successfully updated existing user record");
+        } catch (updateError) {
+          console.error("[TOURNAMENT] Error updating existing user:", updateError);
         }
       }
+      
+      // Пересчитываем количество игроков после добавления
+      const { data: updatedCount } = await supabase
+        .from('lobby_participants')
+        .select('id, user_id')
+        .eq('lobby_id', lobbyId)
+        .in('status', ['searching', 'ready']);
+        
+      const newPlayerCount = updatedCount ? updatedCount.length : 0;
+      console.log(`[TOURNAMENT] Updated player count after adding current user: ${newPlayerCount}/4`);
     }
     
     if (actualPlayerCount < 4) {
-      throw new Error(`Недостаточно игроков для создания турнира: ${actualPlayerCount}/4`);
+      // Еще раз проверяем количество игроков после обновления
+      const { data: finalCheck } = await supabase
+        .from('lobby_participants')
+        .select('id, user_id')
+        .eq('lobby_id', lobbyId)
+        .in('status', ['searching', 'ready']);
+        
+      const finalCount = finalCheck ? finalCheck.length : 0;
+      
+      if (finalCount < 4) {
+        throw new Error(`Недостаточно игроков для создания турнира: ${finalCount}/4`);
+      }
     }
     
     // Пробуем создать турнир с использованием прямого метода
@@ -556,6 +596,9 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
       return await createTournamentViaRPC(lobbyId);
     } catch (directError) {
       console.error("[TOURNAMENT] Direct creation failed, trying manual creation:", directError);
+      
+      // Делаем паузу перед повторной попыткой
+      await delay(1000);
       
       // Проверяем, не был ли турнир уже создан
       const { data: checkLobby } = await supabase

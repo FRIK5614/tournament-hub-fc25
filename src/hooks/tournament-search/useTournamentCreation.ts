@@ -90,22 +90,22 @@ export const useTournamentCreation = (
           if (!isUserInLobby) {
             console.log("[TOURNAMENT-UI] Attempting to add current user to lobby");
             try {
+              // Используем upsert вместо insert, чтобы избежать ошибок с дубликатами
               await supabase
                 .from('lobby_participants')
-                .insert({
+                .upsert({
                   lobby_id: state.lobbyId,
                   user_id: currentUserId,
                   status: 'ready',
                   is_ready: true
-                });
+                }, { onConflict: 'lobby_id,user_id' });
                 
               console.log("[TOURNAMENT-UI] Current user added to lobby successfully");
             } catch (addError) {
               console.error("[TOURNAMENT-UI] Error adding current user to lobby:", addError);
               
-              // Check if error is duplicate key (user already in lobby)
-              if (addError.code === '23505') {
-                console.log("[TOURNAMENT-UI] User already in lobby, updating status");
+              // Пробуем обновить существующую запись
+              try {
                 await supabase
                   .from('lobby_participants')
                   .update({
@@ -114,6 +114,10 @@ export const useTournamentCreation = (
                   })
                   .eq('lobby_id', state.lobbyId)
                   .eq('user_id', currentUserId);
+                  
+                console.log("[TOURNAMENT-UI] Existing user record updated successfully");
+              } catch (updateError) {
+                console.error("[TOURNAMENT-UI] Error updating existing user:", updateError);
               }
             }
             

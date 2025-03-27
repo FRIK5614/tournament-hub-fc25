@@ -30,7 +30,7 @@ export const initialState: TournamentSearchState = {
   isCreatingTournament: false,
   tournamentId: null,
   currentUserId: null,
-  searchAttempts: 0, // Added searchAttempts with default value
+  searchAttempts: 0,
 };
 
 export const tournamentSearchReducer = (

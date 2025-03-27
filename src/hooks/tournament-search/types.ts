@@ -34,5 +34,5 @@ export interface TournamentSearchState {
   tournamentId: string | null;
   triggerTournamentCheck?: boolean;
   currentUserId: string | null;
-  searchAttempts: number; // Added missing property
+  searchAttempts: number;
 }

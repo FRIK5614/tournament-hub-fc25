@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { TournamentSearchState } from './types';
 import { TournamentSearchAction } from './reducer';
 import { createTournamentWithRetry } from '@/services/tournament';
+import { useCallback } from "react";
 
 export const useTournamentCreation = (
   state: TournamentSearchState,
@@ -12,7 +13,7 @@ export const useTournamentCreation = (
 ) => {
   const { toast } = useToast();
 
-  const checkTournamentCreation = async () => {
+  const checkTournamentCreation = useCallback(async () => {
     try {
       if (state.isCreatingTournament || !state.lobbyId) {
         console.log("[TOURNAMENT-UI] Tournament creation already in progress or no lobby");
@@ -61,6 +62,19 @@ export const useTournamentCreation = (
         return;
       }
 
+      // Проверяем еще раз количество игроков в лобби
+      if (lobby && lobby.current_players < 4) {
+        console.log(`[TOURNAMENT-UI] Not enough players to create tournament: ${lobby.current_players}/4`);
+        dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
+        dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'error' });
+        toast({
+          title: "Недостаточно игроков",
+          description: "Для создания турнира необходимо 4 игрока",
+          variant: "destructive",
+        });
+        return;
+      }
+
       try {
         console.log("[TOURNAMENT-UI] Creating tournament with retry mechanism");
         
@@ -91,8 +105,8 @@ export const useTournamentCreation = (
           variant: "destructive",
         });
         
-        // Подождем 1 секунду
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Подождем 2 секунды
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Проверим, не создан ли турнир за это время
         const { data: updatedLobby } = await supabase
@@ -109,6 +123,11 @@ export const useTournamentCreation = (
           // Если турнир все еще не создан, перезапустим процесс
           dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'error' });
           dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
+          
+          // Увеличиваем задержку между попытками
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Попробуем создать турнир еще раз с небольшой задержкой
           dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
         }
       } finally {
@@ -131,7 +150,7 @@ export const useTournamentCreation = (
       // Возможно, стоит отменить поиск при критической ошибке
       await handleCancelSearch();
     }
-  };
+  }, [state.isCreatingTournament, state.lobbyId, state.readyPlayers, state.lobbyParticipants, state.tournamentId, dispatch, toast, handleCancelSearch]);
 
   return { checkTournamentCreation };
 };

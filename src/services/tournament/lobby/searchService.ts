@@ -473,21 +473,3 @@ export const leaveQuickTournament = async (lobbyId: string) => {
     throw error;
   }
 };
-
-// Функция для очистки устаревших лобби-участий
-const cleanupStaleLobbyParticipation = async (userId: string) => {
-  try {
-    // Удаляем участия в лобби со статусом 'waiting' или 'ready_check'
-    const { error } = await supabase
-      .from('lobby_participants')
-      .delete()
-      .eq('user_id', userId)
-      .in('status', ['searching', 'ready']);
-    
-    if (error) {
-      console.error('[TOURNAMENT] Ошибка очистки участий:', error);
-    }
-  } catch (error) {
-    console.error('[TOURNAMENT] Критическая ошибка очистки:', error);
-  }
-};

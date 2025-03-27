@@ -68,10 +68,10 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
       console.error("[TOURNAMENT] Error updating participants to ready:", updateError);
     }
     
-    // Получаем обновленный список участников
+    // Получаем обновленный список участников - исправленная версия без JOIN к profiles
     const { data: readyParticipants, error: readyError } = await supabase
       .from('lobby_participants')
-      .select('user_id, profile:profiles(id, username)')
+      .select('user_id')
       .eq('lobby_id', lobbyId)
       .eq('status', 'ready');
       
@@ -79,7 +79,9 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
       console.error("[TOURNAMENT] Error checking ready participants:", readyError);
     } else {
       console.log(`[TOURNAMENT] Ready participants after update: ${readyParticipants?.length || 0}/4`);
-      console.log("[TOURNAMENT] Ready participants:", readyParticipants?.map(p => p.profile?.username || p.user_id));
+      
+      // Исправленная версия без доступа к profile.username
+      console.log("[TOURNAMENT] Ready participants:", readyParticipants?.map(p => p.user_id));
     }
     
     console.log(`[TOURNAMENT] Creating tournament via RPC as user ${authData.user.id}`);

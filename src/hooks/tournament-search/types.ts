@@ -12,6 +12,15 @@ export interface LobbyParticipant {
   } | null;
 }
 
+export interface LobbyStatus {
+  id: string;
+  status: 'waiting' | 'ready_check' | 'active' | 'completed';
+  current_players: number;
+  max_players: number;
+  tournament_id: string | null;
+  ready_check_started_at: string | null;
+}
+
 export interface TournamentSearchState {
   currentUserId: string | null;
   lobbyId: string | null;

@@ -1,6 +1,6 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { LobbyParticipant, LobbyStatus } from "../useTournamentSearch";
+import { LobbyParticipant, LobbyStatus } from "./types";
 
 /**
  * Fetch the current status of a tournament lobby
@@ -50,10 +50,11 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       throw error;
     }
     
-    // Преобразуем данные в формат LobbyParticipant
+    // Преобразуем данные в формат LobbyParticipant, добавляя lobby_id
     return data.map(participant => ({
       id: participant.id,
       user_id: participant.user_id,
+      lobby_id: lobbyId, // Добавляем lobby_id, которого не было в исходном запросе
       status: participant.status,
       is_ready: participant.is_ready,
       profile: participant.profile || null

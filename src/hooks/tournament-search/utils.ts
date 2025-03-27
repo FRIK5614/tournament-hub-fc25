@@ -66,11 +66,11 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
   return [];
 };
 
-// Fixed the function signature to take a callback and return a cleanup function
+// Setup subscription to lobby updates and return a cleanup function
 export const setupLobbySubscriptions = (
   lobbyId: string, 
   callback: () => void
-) => {
+): (() => void) => {
   const lobbyChannel = supabase
     .channel('lobby_changes')
     .on('postgres_changes', {

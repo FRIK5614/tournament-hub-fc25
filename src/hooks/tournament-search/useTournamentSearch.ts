@@ -1,5 +1,5 @@
 
-import { useReducer, useEffect, useCallback } from 'react';
+import { useReducer, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +18,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
   const [state, dispatch] = useReducer(tournamentSearchReducer, initialState);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const cleanupSubscriptionRef = useRef<(() => void) | null>(null);
 
   // Use the extracted tournament creation logic
   const { checkTournamentCreation } = useTournamentCreation(state, dispatch, () => handleCancelSearch());
@@ -31,7 +32,6 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       }
 
       if (state.lobbyId) {
-        // Fixed: Using the correct parameter for leaveQuickTournament
         await leaveQuickTournament(state.lobbyId);
       }
       dispatch({ type: 'RESET_SEARCH' });
@@ -61,7 +61,6 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         throw new Error("Пользователь не авторизован");
       }
 
-      // Fixed: Using the correct parameter for markUserAsReady
       await markUserAsReady(state.lobbyId || '');
       dispatch({ type: 'ADD_READY_PLAYER', payload: user.user.id });
       
@@ -86,9 +85,6 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     return state.readyPlayers.includes(state.currentUserId || '');
   }, [state.readyPlayers, state.currentUserId]);
 
-  // The cleanup subscription reference for lobby updates
-  let cleanupSubscriptionRef: (() => void) | null = null;
-
   const handleStartSearch = useCallback(async (isRetry: boolean = false): Promise<void> => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SEARCH_ATTEMPTS', payload: isRetry ? state.searchAttempts + 1 : 0 });
@@ -100,7 +96,6 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       }
       dispatch({ type: 'SET_CURRENT_USER_ID', payload: user.user.id });
 
-      // Fixed: Using the correct parameter for searchForQuickTournament
       const { lobbyId } = await searchForQuickTournament();
       dispatch({ type: 'SET_LOBBY_ID', payload: lobbyId });
       
@@ -112,12 +107,12 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       const initialParticipants = await fetchLobbyParticipants(lobbyId);
       dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: initialParticipants });
 
-      // Setup real-time subscriptions - store the cleanup function but don't return it
-      if (cleanupSubscriptionRef) {
-        cleanupSubscriptionRef(); // Clean up existing subscription if any
+      // Setup real-time subscriptions - store the cleanup function in the ref
+      if (cleanupSubscriptionRef.current) {
+        cleanupSubscriptionRef.current(); // Clean up existing subscription if any
       }
       
-      cleanupSubscriptionRef = setupLobbySubscriptions(lobbyId, () => {
+      cleanupSubscriptionRef.current = setupLobbySubscriptions(lobbyId, () => {
         fetchLobbyStatus(lobbyId).then(status => {
           dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
           fetchLobbyParticipants(lobbyId).then(participants => {
@@ -128,8 +123,6 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
 
       dispatch({ type: 'SET_SEARCHING', payload: true });
       dispatch({ type: 'SET_LOADING', payload: false });
-      
-      // No return value needed, function completes here
     } catch (error: any) {
       console.error("Ошибка при поиске лобби:", error);
       toast({
@@ -144,11 +137,28 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
   // Effect to handle cleanup when component unmounts
   useEffect(() => {
     return () => {
-      if (cleanupSubscriptionRef) {
-        cleanupSubscriptionRef();
+      if (cleanupSubscriptionRef.current) {
+        cleanupSubscriptionRef.current();
       }
     };
   }, []);
+
+  // Start countdown timer when ready check is active
+  useEffect(() => {
+    let countdownTimer: number | undefined;
+    
+    if (state.readyCheckActive && state.countdownSeconds > 0) {
+      countdownTimer = window.setInterval(() => {
+        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: state.countdownSeconds - 1 });
+      }, 1000);
+    }
+    
+    return () => {
+      if (countdownTimer) {
+        clearInterval(countdownTimer);
+      }
+    };
+  }, [state.readyCheckActive, state.countdownSeconds]);
 
   useEffect(() => {
     if (state.countdownSeconds === 0 && state.readyCheckActive) {

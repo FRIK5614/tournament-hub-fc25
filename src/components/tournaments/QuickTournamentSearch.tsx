@@ -38,6 +38,7 @@ const QuickTournamentSearch = () => {
           lobbyParticipants={lobbyParticipants} 
           isLoading={isLoading}
           onCancel={handleCancelSearch}
+          onRetry={() => handleStartSearch(true)}
         />
       )}
       

@@ -1,17 +1,19 @@
 
-import { Loader2, Users } from 'lucide-react';
+import { Loader2, Users, RefreshCw } from 'lucide-react';
 import { LobbyParticipant } from '@/hooks/useTournamentSearch';
 
 interface TournamentSearchStatusProps {
   lobbyParticipants: LobbyParticipant[];
   isLoading: boolean;
   onCancel: () => void;
+  onRetry?: () => void;
 }
 
 const TournamentSearchStatus = ({ 
   lobbyParticipants, 
   isLoading, 
-  onCancel 
+  onCancel,
+  onRetry
 }: TournamentSearchStatusProps) => {
   return (
     <div className="text-center">
@@ -38,14 +40,27 @@ const TournamentSearchStatus = ({
         </div>
       )}
       
-      <button 
-        className="btn-outline bg-red-500/20 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-        onClick={onCancel}
-        disabled={isLoading}
-      >
-        {isLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
-        Отменить поиск
-      </button>
+      <div className="flex justify-center gap-2">
+        <button 
+          className="btn-outline bg-red-500/20 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+          onClick={onCancel}
+          disabled={isLoading}
+        >
+          {isLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
+          Отменить поиск
+        </button>
+        
+        {onRetry && (
+          <button 
+            className="btn-outline bg-blue-500/20 border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white"
+            onClick={onRetry}
+            disabled={isLoading}
+          >
+            <RefreshCw size={18} className="mr-2" />
+            Повторить поиск
+          </button>
+        )}
+      </div>
     </div>
   );
 };

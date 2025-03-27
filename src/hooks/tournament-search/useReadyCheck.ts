@@ -82,47 +82,49 @@ export const useReadyCheck = (
     
     const checkAllReady = async () => {
       try {
-        // Проверка на наличие готовых игроков только если количество участников = 4
-        if (state.lobbyParticipants.length === 4) {
-          // Проверяем и исправляем максимальное количество игроков в лобби
-          const { data: lobby } = await supabase
-            .from('tournament_lobbies')
-            .select('max_players, tournament_id')
-            .eq('id', state.lobbyId)
-            .maybeSingle();
-            
-          // Если лобби уже имеет tournament_id, значит турнир уже создан
-          if (lobby?.tournament_id && !state.tournamentId) {
-            console.log(`[TOURNAMENT-UI] Found existing tournament ${lobby.tournament_id}`);
-            dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
-            return;
-          }
-            
-          if (lobby && lobby.max_players !== 4) {
-            console.log("[TOURNAMENT-UI] Fixing lobby max_players to 4");
-            await supabase
-              .from('tournament_lobbies')
-              .update({ max_players: 4 })
-              .eq('id', state.lobbyId);
-          }
+        // Проверка и исправление максимального количества игроков в лобби
+        const { data: lobby } = await supabase
+          .from('tournament_lobbies')
+          .select('max_players, tournament_id')
+          .eq('id', state.lobbyId)
+          .maybeSingle();
           
-          const allReady = state.lobbyParticipants.every(p => 
-            state.readyPlayers.includes(p.user_id)
-          );
+        // Если лобби уже имеет tournament_id, значит турнир уже создан
+        if (lobby?.tournament_id && !state.tournamentId) {
+          console.log(`[TOURNAMENT-UI] Found existing tournament ${lobby.tournament_id}`);
+          dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
+          return;
+        }
+          
+        if (lobby && lobby.max_players !== 4) {
+          console.log("[TOURNAMENT-UI] Fixing lobby max_players to 4");
+          await supabase
+            .from('tournament_lobbies')
+            .update({ max_players: 4 })
+            .eq('id', state.lobbyId);
+        }
+        
+        // Проверка на наличие готовых игроков только если лобби полное
+        if (state.lobbyParticipants.length === 4) {
+          // Проверяем, что все игроки отметились как готовые
+          const readyCount = state.readyPlayers.length;
+          const allReady = readyCount === 4;
+          
+          console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/4, All ready: ${allReady}`);
           
           if (allReady && !state.isCreatingTournament && !state.tournamentId) {
             console.log("[TOURNAMENT-UI] All players are ready, triggering tournament creation");
             
             // Сначала проверяем, что турнир еще не существует
-            const { data: lobby } = await supabase
+            const { data: updatedLobby } = await supabase
               .from('tournament_lobbies')
               .select('tournament_id')
               .eq('id', state.lobbyId)
               .maybeSingle();
               
-            if (lobby?.tournament_id) {
-              console.log(`[TOURNAMENT-UI] Tournament already exists: ${lobby.tournament_id}`);
-              dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
+            if (updatedLobby?.tournament_id) {
+              console.log(`[TOURNAMENT-UI] Tournament already exists: ${updatedLobby.tournament_id}`);
+              dispatch({ type: 'SET_TOURNAMENT_ID', payload: updatedLobby.tournament_id });
             } else {
               dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
             }
@@ -155,7 +157,10 @@ export const useReadyCheck = (
       const handleCountdownComplete = async () => {
         try {
           // Проверяем, все ли игроки готовы
-          if (state.readyPlayers.length === state.lobbyParticipants.length && state.lobbyParticipants.length === 4) {
+          const readyCount = state.readyPlayers.length;
+          console.log(`[TOURNAMENT-UI] Countdown complete, ready players: ${readyCount}/${state.lobbyParticipants.length}`);
+          
+          if (readyCount === 4 && state.lobbyParticipants.length === 4) {
             console.log("[TOURNAMENT-UI] All players ready, creating tournament");
             
             // Сначала проверяем, что турнир уже существует
@@ -184,7 +189,7 @@ export const useReadyCheck = (
           } else {
             toast({
               title: "Не все игроки готовы",
-              description: "Не все игроки подтвердили готовность. Поиск отменен.",
+              description: `Готово только ${readyCount} из 4 игроков. Поиск отменен.`,
               variant: "destructive",
             });
             await handleCancelSearch();

@@ -53,27 +53,36 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
-    if (readyCount < 4) {
-      throw new Error(`Не все игроки подтвердили готовность: ${readyCount}/4`);
+    const readyStatusCount = participants.filter(p => p.status === 'ready').length;
+    
+    console.log(`[TOURNAMENT] Ready count: ${readyCount}, Ready status count: ${readyStatusCount}`);
+    
+    if (readyCount < 4 || readyStatusCount < 4) {
+      throw new Error(`Не все игроки подтвердили готовность: ready=${readyCount}/4, status ready=${readyStatusCount}/4`);
     }
     
-    // Try to create tournament
-    const { data: rpcData, error: rpcError } = await supabase.rpc('create_matches_for_quick_tournament', {
-      lobby_id: lobbyId
-    });
-    
-    if (rpcError) {
-      console.error("[TOURNAMENT] Error creating tournament via RPC:", rpcError);
-      // Более подробная информация об ошибке для отладки
-      if (rpcError.code === "42501") { // Код ошибки доступа в PostgreSQL
-        console.error("[TOURNAMENT] Permission denied - row level security violation");
+    // Try to create tournament using RPC (which should handle permissions)
+    try {
+      console.log("[TOURNAMENT] Using RPC to create tournament matches");
+      const { data: rpcData, error: rpcError } = await supabase.rpc('create_matches_for_quick_tournament', {
+        lobby_id: lobbyId
+      });
+      
+      if (rpcError) {
+        console.error("[TOURNAMENT] RPC error details:", rpcError);
+        if (rpcError.code === "42501") {
+          console.error("[TOURNAMENT] Permission denied - RLS violation. User lacks permission to insert into tournaments table.");
+        }
+        throw rpcError;
       }
-      throw rpcError;
+      
+      console.log(`[TOURNAMENT] RPC execution successful:`, rpcData);
+    } catch (rpcInnerError) {
+      console.error("[TOURNAMENT] Inner RPC error:", rpcInnerError);
+      throw rpcInnerError;
     }
     
-    console.log(`[TOURNAMENT] RPC execution successful:`, rpcData);
-    
-    // Check if tournament was created successfully
+    // Check if tournament was created successfully by RPC
     const { data: updatedLobby } = await supabase
       .from('tournament_lobbies')
       .select('tournament_id')
@@ -81,7 +90,7 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
       .maybeSingle();
       
     if (!updatedLobby?.tournament_id) {
-      throw new Error("Турнир не был создан при выполнении RPC");
+      throw new Error("Турнир не был создан при выполнении RPC. Проверьте права доступа.");
     }
     
     console.log(`[TOURNAMENT] Tournament created via RPC: ${updatedLobby.tournament_id}`);
@@ -144,93 +153,110 @@ export const createTournamentManually = async (lobbyId: string) => {
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
-    if (readyCount < 4) {
-      console.error(`[TOURNAMENT] Not all players are ready: ${readyCount}/4`);
+    const readyStatusCount = participants.filter(p => p.status === 'ready').length;
+    
+    console.log(`[TOURNAMENT] Manual creation - Ready count: ${readyCount}, Ready status count: ${readyStatusCount}`);
+    
+    if (readyCount < 4 || readyStatusCount < 4) {
+      console.error(`[TOURNAMENT] Not all players are ready: ready=${readyCount}/4, status ready=${readyStatusCount}/4`);
       participants.forEach(p => {
         console.log(`Player ${p.user_id} - ready: ${p.is_ready}, status: ${p.status}`);
       });
-      throw new Error(`Не все игроки подтвердили готовность: ${readyCount}/4`);
+      throw new Error(`Не все игроки подтвердили готовность: готовы=${readyCount}/4, статус готов=${readyStatusCount}/4`);
     }
     
     console.log(`[TOURNAMENT] Creating tournament with ${participants.length} participants`);
     
-    // Create tournament with service role key if admin, otherwise try without
-    const { data: tournament, error: tournamentError } = await supabase
-      .from('tournaments')
-      .insert({
-        title: 'Быстрый турнир',
-        max_participants: 4,
-        status: 'active',
-        type: 'quick',
-        tournament_format: 'quick',
-        lobby_id: lobbyId,
-        current_participants: 4
-      })
-      .select('id')
-      .single();
-      
-    if (tournamentError) {
-      console.error("[TOURNAMENT] Error creating tournament manually:", tournamentError);
-      if (tournamentError.code === "42501") { // Код ошибки доступа в PostgreSQL
-        console.error("[TOURNAMENT] Permission denied during tournament creation - check RLS policies");
-      }
-      throw tournamentError;
-    }
-    
-    const tournamentId = tournament.id;
-    console.log(`[TOURNAMENT] Tournament manually created: ${tournamentId}`);
-    
-    // Update lobby with tournament ID
-    const { error: updateLobbyError } = await supabase
-      .from('tournament_lobbies')
-      .update({
-        tournament_id: tournamentId,
-        status: 'active',
-        started_at: new Date().toISOString()
-      })
-      .eq('id', lobbyId);
-      
-    if (updateLobbyError) {
-      console.error("[TOURNAMENT] Error updating lobby with tournament ID:", updateLobbyError);
-      throw updateLobbyError;
-    }
-      
-    // Add participants
-    for (const participant of participants) {
-      const { error: participantError } = await supabase
-        .from('tournament_participants')
+    // Try with different approaches to handle potential RLS issues
+    try {
+      // First attempt: Direct insert
+      console.log("[TOURNAMENT] Attempting direct tournament insert");
+      const { data: tournament, error: tournamentError } = await supabase
+        .from('tournaments')
         .insert({
-          tournament_id: tournamentId,
-          user_id: participant.user_id,
+          title: 'Быстрый турнир',
+          max_participants: 4,
           status: 'active',
-          points: 0
-        });
+          type: 'quick',
+          tournament_format: 'quick',
+          lobby_id: lobbyId,
+          current_participants: 4
+        })
+        .select('id')
+        .single();
         
-      if (participantError) {
-        console.error(`[TOURNAMENT] Error adding participant ${participant.user_id}:`, participantError);
-        // Продолжаем с другими участниками
+      if (tournamentError) {
+        console.error("[TOURNAMENT] Error creating tournament manually:", tournamentError);
+        if (tournamentError.code === "42501") {
+          console.error("[TOURNAMENT] RLS policy violation - looking for a workaround");
+          throw new Error("Отказано в доступе: RLS policy violation");
+        }
+        throw tournamentError;
       }
-    }
-    
-    // Create matches for all participants
-    for (let i = 0; i < participants.length; i++) {
-      for (let j = i + 1; j < participants.length; j++) {
-        const { error: matchError } = await supabase
-          .from('matches')
+      
+      const tournamentId = tournament.id;
+      console.log(`[TOURNAMENT] Tournament manually created: ${tournamentId}`);
+      
+      // Update lobby with tournament ID
+      const { error: updateLobbyError } = await supabase
+        .from('tournament_lobbies')
+        .update({
+          tournament_id: tournamentId,
+          status: 'active',
+          started_at: new Date().toISOString()
+        })
+        .eq('id', lobbyId);
+        
+      if (updateLobbyError) {
+        console.error("[TOURNAMENT] Error updating lobby with tournament ID:", updateLobbyError);
+        throw updateLobbyError;
+      }
+        
+      // Add participants
+      for (const participant of participants) {
+        const { error: participantError } = await supabase
+          .from('tournament_participants')
           .insert({
             tournament_id: tournamentId,
-            player1_id: participants[i].user_id,
-            player2_id: participants[j].user_id,
-            status: 'scheduled'
+            user_id: participant.user_id,
+            status: 'active',
+            points: 0
           });
           
-        if (matchError) {
-          console.error(`[TOURNAMENT] Error creating match between ${participants[i].user_id} and ${participants[j].user_id}:`, matchError);
+        if (participantError) {
+          console.error(`[TOURNAMENT] Error adding participant ${participant.user_id}:`, participantError);
+          // Продолжаем с другими участниками
         }
       }
+      
+      // Create matches for all participants
+      for (let i = 0; i < participants.length; i++) {
+        for (let j = i + 1; j < participants.length; j++) {
+          const { error: matchError } = await supabase
+            .from('matches')
+            .insert({
+              tournament_id: tournamentId,
+              player1_id: participants[i].user_id,
+              player2_id: participants[j].user_id,
+              status: 'scheduled'
+            });
+            
+          if (matchError) {
+            console.error(`[TOURNAMENT] Error creating match between ${participants[i].user_id} and ${participants[j].user_id}:`, matchError);
+          }
+        }
+      }
+      
+      return { tournamentId, created: true };
+    } catch (directInsertError) {
+      console.error("[TOURNAMENT] Direct insert approach failed:", directInsertError);
+      
+      // Second attempt: Try another method if available
+      // This could be implemented as a fallback if you have another way
+      // to create tournaments that might bypass RLS issues
+      
+      throw directInsertError; // Re-throw for now since we don't have an alternative
     }
-    
-    return { tournamentId, created: true };
   } catch (error) {
     console.error("[TOURNAMENT] Error in createTournamentManually:", error);
     throw error;
@@ -261,6 +287,13 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
         .from('tournament_lobbies')
         .update({ max_players: 4 })
         .eq('id', lobbyId);
+    }
+    
+    // Проверяем авторизацию
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user) {
+      console.error("[TOURNAMENT] Authentication required but not available:", authError);
+      throw new Error("Требуется авторизация для создания турнира");
     }
     
     // Сначала проверим, все ли игроки действительно готовы

@@ -91,6 +91,14 @@ export function useTournamentCreation(
       try {
         console.log(`[TOURNAMENT-UI] Polling for tournament ID on lobby ${state.lobbyId}`);
         
+        // Проверяем авторизацию
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData?.user) {
+          console.error("[TOURNAMENT-UI] Authentication check during polling:", authError);
+        } else {
+          console.log(`[TOURNAMENT-UI] Current authenticated user: ${authData.user.id}`);
+        }
+        
         const { data } = await supabase
           .from('tournament_lobbies')
           .select('tournament_id, status, max_players')
@@ -116,13 +124,12 @@ export function useTournamentCreation(
         }
         
         // Also check if all players are ready but tournament not created yet
-        if (data?.status === 'ready_check' && !data?.tournament_id && state.lobbyParticipants.length === 4) {
-          const allReady = state.lobbyParticipants.every(p => 
-            state.readyPlayers.includes(p.user_id)
-          );
+        if (data?.status === 'ready_check' && !data?.tournament_id && 
+            state.lobbyParticipants.length === 4 && state.readyPlayers.length === 4) {
           
-          if (allReady && !state.isCreatingTournament) {
-            console.log('[TOURNAMENT-UI] All players ready but no tournament, triggering creation');
+          console.log('[TOURNAMENT-UI] All players ready but no tournament, triggering creation');
+          
+          if (!state.isCreatingTournament) {
             dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
           }
         }
@@ -143,6 +150,21 @@ export function useTournamentCreation(
     console.log(`[TOURNAMENT-UI] Checking tournament creation for lobby ${lobbyId}`);
     
     try {
+      // Проверяем авторизацию
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user) {
+        console.error("[TOURNAMENT-UI] Authentication required:", authError);
+        toast({
+          title: "Требуется авторизация",
+          description: "Для создания турнира необходимо авторизоваться в системе",
+          variant: "destructive",
+        });
+        handleCancelSearch();
+        return;
+      }
+      
+      console.log(`[TOURNAMENT-UI] Current user: ${authData.user.id}`);
+      
       dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: true });
       dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'checking' });
       
@@ -223,7 +245,16 @@ export function useTournamentCreation(
         }
       } catch (createError: any) {
         console.error("[TOURNAMENT-UI] Error in tournament creation:", createError);
-        console.error("[TOURNAMENT-UI] Error details:", createError.message, createError.code, createError.details);
+        console.error("[TOURNAMENT-UI] Error details:", createError.message, createError.code);
+        
+        if (createError.message && createError.message.includes("violates row-level security policy")) {
+          console.error("[TOURNAMENT-UI] RLS policy violation detected");
+          toast({
+            title: "Ошибка доступа",
+            description: "Недостаточно прав для создания турнира. Обратитесь к администратору.",
+            variant: "destructive",
+          });
+        }
         
         // Increment creation attempts
         creationAttemptsRef.current += 1;

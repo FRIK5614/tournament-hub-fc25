@@ -17,6 +17,7 @@ const QuickTournamentSearch = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isCreatingTournament, setIsCreatingTournament] = useState(false);
   const [tournamentCreationStatus, setTournamentCreationStatus] = useState('');
+  const [creationAttempts, setCreationAttempts] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -52,6 +53,7 @@ const QuickTournamentSearch = () => {
       setReadyCheckActive(false);
       setSearchAttempts(0);
       setTournamentCreationStatus('');
+      setCreationAttempts(0);
       
       toast({
         title: "Поиск отменен",
@@ -93,15 +95,30 @@ const QuickTournamentSearch = () => {
         console.log(`[TOURNAMENT-UI] All players are ready but tournament creation failed`);
         setTournamentCreationStatus('failed');
         
-        toast({
-          title: "Ошибка создания турнира",
-          description: "Все игроки готовы, но не удалось создать турнир. Попробуйте снова.",
-          variant: "destructive",
-        });
-        
-        setTimeout(() => {
-          handleCancelSearch();
-        }, 5000);
+        if (creationAttempts >= 2) {
+          toast({
+            title: "Ошибка создания турнира",
+            description: "Не удалось создать турнир после нескольких попыток. Поиск отменен.",
+            variant: "destructive",
+          });
+          
+          setTimeout(() => {
+            handleCancelSearch();
+          }, 3000);
+        } else {
+          setCreationAttempts(prev => prev + 1);
+          toast({
+            title: "Повторная попытка",
+            description: "Пытаемся создать турнир еще раз...",
+            variant: "default",
+          });
+          
+          setTimeout(() => {
+            setIsCreatingTournament(false);
+            setTournamentCreationStatus('waiting');
+            checkTournamentCreation();
+          }, 2000);
+        }
       } else {
         setTournamentCreationStatus('waiting');
       }
@@ -111,17 +128,19 @@ const QuickTournamentSearch = () => {
       
       toast({
         title: "Ошибка",
-        description: "Произошла ошибка при создании турнира. Попробуйте снова.",
+        description: "Произошла ошибка при создании турнира. Поиск отменен.",
         variant: "destructive",
       });
       
       setTimeout(() => {
         handleCancelSearch();
-      }, 5000);
+      }, 3000);
     } finally {
-      setIsCreatingTournament(false);
+      if (tournamentCreationStatus !== 'waiting') {
+        setIsCreatingTournament(false);
+      }
     }
-  }, [lobbyId, navigate, toast, isCreatingTournament]);
+  }, [lobbyId, navigate, toast, isCreatingTournament, creationAttempts]);
 
   useEffect(() => {
     if (!lobbyId) return;

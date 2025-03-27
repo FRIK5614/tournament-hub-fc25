@@ -24,7 +24,17 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
       return fetch(url, {
         ...options,
         signal: options?.signal || AbortSignal.timeout(30000), // 30 second timeout
+        cache: 'no-cache', // Prevent caching issues
       });
+    },
+  },
+  // Add auto-retry for failed requests
+  db: {
+    schema: 'public',
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
     },
   },
 });

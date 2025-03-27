@@ -129,7 +129,6 @@ export const searchForQuickTournament = async () => {
   }
 };
 
-// New function to leave a quick tournament
 export const leaveQuickTournament = async (lobbyId: string) => {
   const { data: user } = await supabase.auth.getUser();
   
@@ -212,7 +211,6 @@ export const leaveQuickTournament = async (lobbyId: string) => {
   }
 };
 
-// Helper function to update lobby player count
 const updateLobbyPlayerCount = async (lobbyId: string) => {
   try {
     // Get the current active participants count (only searching or ready players)
@@ -424,7 +422,7 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
     if (readyParticipants.length === lobby.max_players && activeParticipants === lobby.max_players) {
       console.log(`[TOURNAMENT] All ${lobby.max_players} players are ready in lobby ${lobbyId}. Creating tournament...`);
       
-      // Force update the lobby status to confirm we're creating a tournament
+      // Set the lobby to the 'waiting' status which is valid for tournament creation
       const { error: statusUpdateError } = await supabase
         .from('tournament_lobbies')
         .update({ status: 'waiting' })
@@ -437,29 +435,23 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
         return { allReady: true, tournamentId: null };
       }
       
-      // Call the RPC function to create a tournament
-      try {
-        console.log(`[TOURNAMENT] Calling create_matches_for_quick_tournament for lobby ${lobbyId}`);
-        const { data, error } = await supabase.rpc('create_matches_for_quick_tournament', {
-          lobby_id: lobbyId
-        });
-        
-        if (error) {
-          console.error("[TOURNAMENT] Error creating tournament:", error);
-          // If there was an error, revert the lobby status
-          await supabase
-            .from('tournament_lobbies')
-            .update({ status: 'ready_check' })
-            .eq('id', lobbyId);
-            
-          return { allReady: true, tournamentId: null };
-        }
-        
-        console.log(`[TOURNAMENT] Tournament creation response for lobby ${lobbyId}:`, data);
-      } catch (e) {
-        console.error("[TOURNAMENT] Exception in tournament creation RPC:", e);
+      // Add a small delay to ensure the status update is processed
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Call the RPC function to create a tournament with better error handling
+      console.log(`[TOURNAMENT] Calling create_matches_for_quick_tournament for lobby ${lobbyId}`);
+      const { data, error } = await supabase.rpc('create_matches_for_quick_tournament', {
+        lobby_id: lobbyId
+      });
+      
+      if (error) {
+        console.error("[TOURNAMENT] Error creating tournament:", error);
+        console.error("[TOURNAMENT] Error details:", error.message, error.details, error.hint);
         return { allReady: true, tournamentId: null };
       }
+      
+      // Add another delay to ensure tournament is created
+      await new Promise(resolve => setTimeout(resolve, 800));
       
       // Get the tournament ID that was created
       const { data: updatedLobby, error: updateError } = await supabase
@@ -654,7 +646,6 @@ export const confirmMatchResult = async (matchId: string, confirm: boolean) => {
   return true;
 };
 
-// Tournament standings/table
 export const getTournamentStandings = async (tournamentId: string) => {
   const { data, error } = await supabase
     .from('tournament_participants')
@@ -673,7 +664,6 @@ export const getTournamentStandings = async (tournamentId: string) => {
   return data;
 };
 
-// Long-term tournaments
 export const getLongTermTournaments = async () => {
   const { data, error } = await supabase
     .from('tournaments')

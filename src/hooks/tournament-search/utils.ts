@@ -23,6 +23,22 @@ export const fetchLobbyStatus = async (lobbyId: string) => {
       }
       
       console.log(`[TOURNAMENT-UI] Lobby data: status=${lobbyData.status}, players=${lobbyData.current_players}/${lobbyData.max_players}, tournament=${lobbyData.tournament_id || 'none'}`);
+      
+      // If lobby is in ready_check, double-check participants status
+      if (lobbyData.status === 'ready_check') {
+        console.log("[TOURNAMENT-UI] Lobby in ready_check state, ensuring participants have correct status");
+        try {
+          // Ensure all participants have status 'ready' when in ready check mode
+          await supabase
+            .from('lobby_participants')
+            .update({ status: 'ready' })
+            .eq('lobby_id', lobbyId)
+            .in('status', ['searching']);
+        } catch (err) {
+          console.error("[TOURNAMENT-UI] Error updating participant statuses in ready check:", err);
+        }
+      }
+      
       return lobbyData;
     } catch (error) {
       console.error("[TOURNAMENT-UI] Error in fetchLobbyStatus:", error);
@@ -56,6 +72,11 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       
       const actualParticipants = participants || [];
       console.log(`[TOURNAMENT-UI] Found ${actualParticipants.length} active participants in lobby ${lobbyId}`);
+      
+      // Log details for debugging
+      actualParticipants.forEach(p => {
+        console.log(`[TOURNAMENT-UI] Participant in lobby ${lobbyId}: user_id=${p.user_id}, is_ready=${p.is_ready}, status=${p.status}`);
+      });
       
       // Log ready players for debugging
       const readyPlayers = actualParticipants.filter(p => p.is_ready).map(p => p.user_id);
@@ -139,5 +160,36 @@ export const fetchReadyPlayers = async (lobbyId: string): Promise<string[]> => {
   } catch (error) {
     console.error("[TOURNAMENT-UI] Error in fetchReadyPlayers:", error);
     return [];
+  }
+};
+
+// Function to ensure all participants have correct status in ready check
+export const ensureParticipantStatus = async (lobbyId: string): Promise<void> => {
+  try {
+    console.log(`[TOURNAMENT-UI] Ensuring participant statuses for lobby ${lobbyId}`);
+    
+    // First check lobby status
+    const { data: lobby } = await supabase
+      .from('tournament_lobbies')
+      .select('status')
+      .eq('id', lobbyId)
+      .maybeSingle();
+      
+    if (lobby?.status === 'ready_check') {
+      // Update all participants to 'ready' status when in ready check
+      const { error } = await supabase
+        .from('lobby_participants')
+        .update({ status: 'ready' })
+        .eq('lobby_id', lobbyId)
+        .in('status', ['searching']);
+        
+      if (error) {
+        console.error("[TOURNAMENT-UI] Error updating participant statuses:", error);
+      } else {
+        console.log("[TOURNAMENT-UI] Successfully updated participant statuses to 'ready'");
+      }
+    }
+  } catch (error) {
+    console.error("[TOURNAMENT-UI] Error in ensureParticipantStatus:", error);
   }
 };

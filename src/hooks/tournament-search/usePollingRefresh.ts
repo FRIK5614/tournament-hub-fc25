@@ -1,6 +1,6 @@
 
 import { useEffect, useCallback, useRef } from 'react';
-import { fetchLobbyStatus, fetchLobbyParticipants, fetchReadyPlayers } from './utils';
+import { fetchLobbyStatus, fetchLobbyParticipants, fetchReadyPlayers, ensureParticipantStatus } from './utils';
 import { TournamentSearchAction } from './reducer';
 import { supabase, resetSupabaseConnection } from '@/integrations/supabase/client';
 
@@ -29,6 +29,9 @@ export const usePollingRefresh = (
     
     try {
       console.log(`[TOURNAMENT-UI] Refreshing data for lobby ${lobbyId}`);
+      
+      // Ensure participant statuses are correct
+      await ensureParticipantStatus(lobbyId);
       
       // Fetch lobby status
       const status = await fetchLobbyStatus(lobbyId);

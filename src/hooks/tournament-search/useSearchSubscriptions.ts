@@ -15,10 +15,11 @@ export const useSearchSubscriptions = (
   onDataRefresh: RefreshCallback
 ) => {
   const cleanupSubscriptionRef = useRef<(() => void) | null>(null);
-  const channelsRef = useRef<{lobbyChannel: any, lobbyStatusChannel: any, readyPlayersChannel: any}>({
+  const channelsRef = useRef<{lobbyChannel: any, lobbyStatusChannel: any, readyPlayersChannel: any, participantStatusChannel: any}>({
     lobbyChannel: null,
     lobbyStatusChannel: null,
-    readyPlayersChannel: null
+    readyPlayersChannel: null,
+    participantStatusChannel: null
   });
 
   // Function to log subscription status
@@ -80,7 +81,7 @@ export const useSearchSubscriptions = (
           event: 'UPDATE',
           schema: 'public',
           table: 'lobby_participants',
-          filter: `lobby_id=eq.${lobbyId}`
+          filter: `lobby_id=eq.${lobbyId} and is_ready=eq.true`
         }, (payload) => {
           if (payload.new && payload.new.is_ready !== payload.old?.is_ready) {
             console.log("[TOURNAMENT-UI] Ready player status changed:", payload.new);
@@ -90,9 +91,32 @@ export const useSearchSubscriptions = (
           }
         })
         .subscribe((status) => logSubscriptionStatus(status, "Ready players channel"));
+        
+      // New channel specifically for participant status updates
+      const participantStatusChannel = supabase
+        .channel(`participant_status_${lobbyId}_${timestamp}_${clientId}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'lobby_participants',
+          filter: `lobby_id=eq.${lobbyId}`
+        }, (payload) => {
+          if (payload.new && payload.new.status !== payload.old?.status) {
+            console.log("[TOURNAMENT-UI] Participant status changed:", payload.new);
+            onDataRefresh(lobbyId).catch(err => {
+              console.error("[TOURNAMENT-UI] Error refreshing after participant status change:", err);
+            });
+          }
+        })
+        .subscribe((status) => logSubscriptionStatus(status, "Participant status channel"));
       
       // Store channel references
-      channelsRef.current = { lobbyChannel, lobbyStatusChannel, readyPlayersChannel };
+      channelsRef.current = { 
+        lobbyChannel, 
+        lobbyStatusChannel, 
+        readyPlayersChannel,
+        participantStatusChannel
+      };
         
       return () => {
         console.log(`[TOURNAMENT-UI] Cleaning up subscriptions for lobby ${lobbyId}`);
@@ -100,6 +124,7 @@ export const useSearchSubscriptions = (
           supabase.removeChannel(lobbyChannel);
           supabase.removeChannel(lobbyStatusChannel);
           supabase.removeChannel(readyPlayersChannel);
+          supabase.removeChannel(participantStatusChannel);
         } catch (err) {
           console.error("[TOURNAMENT-UI] Error removing channels:", err);
         }
@@ -151,8 +176,11 @@ export const useSearchSubscriptions = (
         console.error("[TOURNAMENT-UI] Error in initial subscription data refresh:", err);
       });
       
-      // Set up periodic subscription status check
-      const statusCheckInterval = window.setInterval(checkSubscriptionStatus, 5000);
+      // Set up periodic subscription status check - more frequent in production
+      const statusCheckInterval = window.setInterval(
+        checkSubscriptionStatus, 
+        isProduction ? 3000 : 5000
+      );
       
       // Cleanup function
       return () => {
@@ -174,5 +202,5 @@ export const useSearchSubscriptions = (
         cleanupSubscriptionRef.current = null;
       }
     };
-  }, [isSearching, lobbyId, setupSubscriptions, onDataRefresh, checkSubscriptionStatus]);
+  }, [isSearching, lobbyId, setupSubscriptions, onDataRefresh, checkSubscriptionStatus, isProduction]);
 };

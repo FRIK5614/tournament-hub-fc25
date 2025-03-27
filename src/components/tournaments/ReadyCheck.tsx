@@ -23,6 +23,11 @@ const ReadyCheck = ({
   onReady,
   onCancel
 }: ReadyCheckProps) => {
+  // Helper to determine if player is in ready check
+  const isPlayerInReadyCheck = (participant: LobbyParticipant) => {
+    return participant.status === 'ready';
+  };
+
   // Render tournament creation status
   const renderTournamentCreationStatus = () => {
     if (!tournamentCreationStatus || tournamentCreationStatus === 'waiting') return null;
@@ -57,6 +62,12 @@ const ReadyCheck = ({
     );
   };
 
+  // Log participants and ready players for debugging
+  console.log("[TOURNAMENT-UI] ReadyCheck rendering with participants:", 
+    lobbyParticipants.map(p => ({ id: p.user_id, ready: p.is_ready, status: p.status }))
+  );
+  console.log("[TOURNAMENT-UI] ReadyCheck readyPlayers:", readyPlayers);
+
   return (
     <div className="text-center">
       <h4 className="text-lg font-medium mb-2">Все игроки найдены!</h4>
@@ -75,12 +86,19 @@ const ReadyCheck = ({
             className={`glass-card p-3 flex items-center justify-between ${
               readyPlayers.includes(participant.user_id) 
                 ? 'border-green-500' 
-                : 'border-gray-500'
+                : !isPlayerInReadyCheck(participant)
+                  ? 'border-yellow-500'
+                  : 'border-gray-500'
             }`}
           >
             <span>{participant.profile?.username || 'Игрок'}</span>
             {readyPlayers.includes(participant.user_id) ? (
               <Check className="text-green-500" size={18} />
+            ) : !isPlayerInReadyCheck(participant) ? (
+              <div className="flex items-center">
+                <span className="text-yellow-500 mr-1 text-xs">В поиске</span>
+                <Loader2 className="animate-spin text-yellow-500" size={14} />
+              </div>
             ) : (
               <Loader2 className="animate-spin text-yellow-500" size={18} />
             )}

@@ -392,14 +392,14 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
         // Call the RPC function to create a tournament with retries
         console.log(`[TOURNAMENT] Calling create_matches_for_quick_tournament for lobby ${lobbyId}`);
         
-        const { error } = await withRetry(() => 
+        const result = await withRetry(() => 
           supabase.rpc('create_matches_for_quick_tournament', {
             lobby_id: lobbyId
           })
         );
         
-        if (error) {
-          console.error("[TOURNAMENT] Error creating tournament:", error);
+        if (result.error) {
+          console.error("[TOURNAMENT] Error creating tournament:", result.error);
           return { allReady: true, tournamentId: null };
         }
         
@@ -443,16 +443,16 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
 };
 
 export const getLobbyStatus = async (lobbyId: string) => {
-  const { data, error } = await supabase
+  const response = await supabase
     .from('tournament_lobbies')
     .select('*, lobby_participants(*)')
     .eq('id', lobbyId)
     .single();
   
-  if (error) {
-    console.error("[TOURNAMENT] Error getting lobby status:", error);
+  if (response.error) {
+    console.error("[TOURNAMENT] Error getting lobby status:", response.error);
     throw new Error("Не удалось получить информацию о турнире.");
   }
   
-  return data;
+  return response.data;
 };

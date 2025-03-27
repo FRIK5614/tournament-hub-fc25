@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
@@ -35,7 +36,7 @@ const QuickTournamentSearch = () => {
       try {
         const { data: lobbyData, error: lobbyError } = await supabase
           .from('tournament_lobbies')
-          .select('current_players, status, max_players')
+          .select('current_players, status, max_players, tournament_id')
           .eq('id', lobbyId)
           .single();
         
@@ -45,6 +46,18 @@ const QuickTournamentSearch = () => {
         }
         
         console.log("Lobby data:", lobbyData);
+        
+        // If tournament is created, navigate to it
+        if (lobbyData.tournament_id && lobbyData.status === 'active') {
+          toast({
+            title: "Турнир начинается!",
+            description: "Все игроки готовы. Переход к турниру...",
+            variant: "default",
+          });
+          
+          navigate(`/tournaments/${lobbyData.tournament_id}`);
+          return;
+        }
         
         setReadyCheckActive(lobbyData.status === 'ready_check');
         
@@ -58,7 +71,8 @@ const QuickTournamentSearch = () => {
             status
           `)
           .eq('lobby_id', lobbyId)
-          .eq('status', 'searching');
+          .eq('status', 'searching')
+          .or(`status.eq.ready`);
         
         if (error) {
           console.error("Error fetching lobby participants:", error);
@@ -87,7 +101,22 @@ const QuickTournamentSearch = () => {
           
           console.log("Lobby participants with profiles:", participantsWithProfiles);
           setLobbyParticipants(participantsWithProfiles || []);
-          setReadyPlayers(participantsWithProfiles?.filter(p => p.is_ready).map(p => p.user_id) || []);
+          
+          // Update ready players list
+          const readyPlayerIds = participantsWithProfiles
+            ?.filter(p => p.is_ready)
+            .map(p => p.user_id) || [];
+          setReadyPlayers(readyPlayerIds);
+          
+          console.log("Ready players:", readyPlayerIds);
+          console.log("Total players:", participantsWithProfiles.length);
+          
+          // Check if all players are ready and we're in ready check state
+          if (readyPlayerIds.length === lobbyData.max_players && 
+              participantsWithProfiles.length === lobbyData.max_players && 
+              lobbyData.status === 'ready_check') {
+            console.log("All players are ready! Tournament should be created soon.");
+          }
         } else {
           setLobbyParticipants([]);
           setReadyPlayers([]);

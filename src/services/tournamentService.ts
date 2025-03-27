@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 export const searchForQuickTournament = async () => {
@@ -89,7 +88,65 @@ export const markUserAsReady = async (lobbyId: string) => {
     throw new Error("Не удалось подтвердить готовность. Пожалуйста, попробуйте снова.");
   }
   
+  // Check if all players are ready
+  await checkAllPlayersReady(lobbyId);
+  
   return true;
+};
+
+export const checkAllPlayersReady = async (lobbyId: string) => {
+  try {
+    // Get all participants in the lobby
+    const { data: participants, error: participantsError } = await supabase
+      .from('lobby_participants')
+      .select('is_ready, status')
+      .eq('lobby_id', lobbyId)
+      .eq('status', 'ready');
+    
+    if (participantsError) {
+      console.error("Ошибка при проверке готовности игроков:", participantsError);
+      return false;
+    }
+    
+    // Get lobby info
+    const { data: lobby, error: lobbyError } = await supabase
+      .from('tournament_lobbies')
+      .select('current_players, max_players, status')
+      .eq('id', lobbyId)
+      .single();
+    
+    if (lobbyError) {
+      console.error("Ошибка при получении информации о лобби:", lobbyError);
+      return false;
+    }
+    
+    console.log("Ready players:", participants?.length);
+    console.log("Total players in lobby:", lobby.current_players);
+    console.log("Lobby status:", lobby.status);
+    
+    // Check if we have exactly the right number of players and they're all ready
+    if (participants?.length === lobby.max_players && lobby.status === 'ready_check') {
+      console.log("All players are ready. Creating tournament...");
+      
+      // Call the RPC function to create a tournament
+      const { data, error } = await supabase.rpc('create_matches_for_quick_tournament', {
+        lobby_id: lobbyId
+      });
+      
+      if (error) {
+        console.error("Ошибка при создании турнира:", error);
+        return false;
+      }
+      
+      console.log("Tournament created successfully!");
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error("Ошибка в checkAllPlayersReady:", error);
+    return false;
+  }
 };
 
 export const getLobbyStatus = async (lobbyId: string) => {

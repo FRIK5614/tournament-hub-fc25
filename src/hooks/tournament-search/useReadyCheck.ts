@@ -63,9 +63,12 @@ export const useReadyCheck = (
 
   // Периодическая проверка, все ли игроки готовы
   useEffect(() => {
-    if (state.readyCheckActive && state.lobbyId && state.lobbyParticipants.length === 4) {
-      const checkAllReady = async () => {
-        try {
+    if (!state.readyCheckActive || !state.lobbyId) return;
+    
+    const checkAllReady = async () => {
+      try {
+        // Проверка на наличие готовых игроков только если количество участников = 4
+        if (state.lobbyParticipants.length === 4) {
           const allReady = state.lobbyParticipants.every(p => 
             state.readyPlayers.includes(p.user_id)
           );
@@ -87,17 +90,17 @@ export const useReadyCheck = (
               dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
             }
           }
-        } catch (error) {
-          console.error("[TOURNAMENT-UI] Error checking player readiness:", error);
         }
-      };
-      
-      // Проверка сразу и затем каждую секунду
-      checkAllReady();
-      const intervalId = setInterval(checkAllReady, 1000);
-      
-      return () => clearInterval(intervalId);
-    }
+      } catch (error) {
+        console.error("[TOURNAMENT-UI] Error checking player readiness:", error);
+      }
+    };
+    
+    // Проверка сразу и затем каждую секунду
+    checkAllReady();
+    const intervalId = setInterval(checkAllReady, 1000);
+    
+    return () => clearInterval(intervalId);
   }, [
     state.readyCheckActive, 
     state.lobbyId, 
@@ -110,12 +113,14 @@ export const useReadyCheck = (
 
   // Обработка завершения обратного отсчета
   useEffect(() => {
+    // Если отсчет завершился и игра в режиме ожидания готовности
     if (state.countdownSeconds === 0 && state.readyCheckActive) {
       const handleCountdownComplete = async () => {
         try {
-          // Пока не сбрасываем флаг активной проверки готовности, ждем проверки создания турнира
-          
-          if (state.readyPlayers.length === state.lobbyParticipants.length) {
+          // Проверяем, все ли игроки готовы
+          if (state.readyPlayers.length === state.lobbyParticipants.length && state.lobbyParticipants.length === 4) {
+            console.log("[TOURNAMENT-UI] All players ready, creating tournament");
+            
             // Сначала проверяем, что турнир уже существует
             const { data: lobby } = await supabase
               .from('tournament_lobbies')
@@ -139,11 +144,12 @@ export const useReadyCheck = (
             await handleCancelSearch();
           }
           
-          // Теперь сбрасываем флаг активной проверки готовности
+          // Сбрасываем флаг активной проверки готовности
           dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
         } catch (error) {
           console.error("[TOURNAMENT-UI] Error handling countdown completion:", error);
           dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+          await handleCancelSearch();
         }
       };
       

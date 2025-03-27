@@ -62,6 +62,18 @@ export const useTournamentSearch = () => {
         payload: participants 
       });
       
+      // Обновляем список готовых игроков
+      const readyPlayers = participants
+        .filter(p => p.is_ready)
+        .map(p => p.user_id);
+      
+      dispatch({
+        type: 'SET_READY_PLAYERS',
+        payload: readyPlayers
+      });
+      
+      console.log("[TOURNAMENT-UI] Ready players:", readyPlayers);
+      
       // If lobby has tournament_id, set it
       if (lobbyStatus.tournament_id) {
         console.log(`[TOURNAMENT-UI] Lobby has tournament: ${lobbyStatus.tournament_id}`);

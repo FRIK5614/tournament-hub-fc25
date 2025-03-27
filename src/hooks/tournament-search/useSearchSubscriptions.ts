@@ -38,7 +38,7 @@ export const useSearchSubscriptions = (
           if (payload.new.status === 'ready_check' && payload.old.status !== 'ready_check') {
             console.log('[TOURNAMENT-UI] Ready check activated!');
             dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
-            dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // Увеличиваем до 120 секунд (2 минуты)
+            dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // 2 минуты на подтверждение
             
             // Принудительно обновляем данные о участниках
             refreshLobbyData(lobbyId);
@@ -66,6 +66,15 @@ export const useSearchSubscriptions = (
         },
         (payload) => {
           console.log('[TOURNAMENT-UI] Participant changed:', payload);
+          
+          // Если изменился флаг is_ready, обновляем массив готовых игроков
+          if (payload.eventType === 'UPDATE' && 
+              payload.new.is_ready === true && 
+              payload.old.is_ready === false) {
+            console.log(`[TOURNAMENT-UI] Player ${payload.new.user_id} marked as ready`);
+            dispatch({ type: 'ADD_READY_PLAYER', payload: payload.new.user_id });
+          }
+          
           // Любое изменение участников должно вызывать обновление
           refreshLobbyData(lobbyId);
         }

@@ -38,7 +38,7 @@ const ReadyCheck = ({
   };
 
   // Check if all players are ready
-  const allPlayersReady = lobbyParticipants.length > 0 && 
+  const allPlayersReady = lobbyParticipants.length === 4 && 
     lobbyParticipants.every(p => isPlayerReady(p));
 
   // Check if countdown has expired
@@ -102,10 +102,11 @@ const ReadyCheck = ({
   };
 
   // Count ready players for debugging
-  const readyCount = lobbyParticipants.filter(p => isPlayerReady(p)).length;
+  const readyCount = readyPlayers.length;
   const totalCount = lobbyParticipants.length;
   
   console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/${totalCount}`);
+  console.log("[TOURNAMENT-UI] Ready players array:", readyPlayers);
   console.log("[TOURNAMENT-UI] Ready check participants:", 
     lobbyParticipants.map(p => ({ 
       id: p.user_id, 

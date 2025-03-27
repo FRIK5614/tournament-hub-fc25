@@ -9,31 +9,36 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-// Add more robust configuration with retries and timeouts
+// Create a singleton instance of the Supabase client
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: false, // Prevent automatic URL detection
   },
   global: {
     headers: {
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache', // Prevent caching for all requests
     },
-    // Increase timeout for longer operations
     fetch: (url, options) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // Increase to 60 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
       
-      return fetch(url, {
+      // Add timestamp to URLs to prevent caching when needed
+      const urlWithCache = url.toString().includes('?') 
+        ? `${url}&_t=${Date.now()}` 
+        : `${url}?_t=${Date.now()}`;
+      
+      return fetch(urlWithCache, {
         ...options,
         signal: controller.signal,
-        cache: 'no-cache', // Prevent caching issues
+        cache: 'no-cache',
       }).finally(() => {
         clearTimeout(timeoutId);
       });
     },
   },
-  // Add more reasonable timeouts for DB operations
   db: {
     schema: 'public',
   },

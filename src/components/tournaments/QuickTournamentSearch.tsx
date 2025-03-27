@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
@@ -21,18 +22,7 @@ const QuickTournamentSearch = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        setCurrentUserId(data.user.id);
-        console.log(`[TOURNAMENT-UI] Current user ID: ${data.user.id}`);
-      }
-    };
-    
-    fetchUser();
-  }, []);
-
+  // Handle cancelling search - defined early to avoid reference errors
   const handleCancelSearch = async () => {
     if (!lobbyId) {
       setIsSearching(false);
@@ -42,6 +32,7 @@ const QuickTournamentSearch = () => {
     
     try {
       console.log(`[TOURNAMENT-UI] Cancelling search for lobby ${lobbyId}`);
+      setIsLoading(true);
       
       if (currentUserId) {
         await leaveQuickTournament(lobbyId);
@@ -62,9 +53,12 @@ const QuickTournamentSearch = () => {
       });
     } catch (error) {
       console.error("[TOURNAMENT-UI] Error canceling search:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  // Check tournament creation function
   const checkTournamentCreation = useCallback(async () => {
     if (!lobbyId || isCreatingTournament) return;
     
@@ -95,7 +89,7 @@ const QuickTournamentSearch = () => {
         console.log(`[TOURNAMENT-UI] All players are ready but tournament creation failed`);
         setTournamentCreationStatus('failed');
         
-        if (creationAttempts >= 2) {
+        if (creationAttempts >= 3) {
           toast({
             title: "Ошибка создания турнира",
             description: "Не удалось создать турнир после нескольких попыток. Поиск отменен.",
@@ -140,8 +134,26 @@ const QuickTournamentSearch = () => {
         setIsCreatingTournament(false);
       }
     }
-  }, [lobbyId, navigate, toast, isCreatingTournament, creationAttempts]);
+  }, [lobbyId, navigate, toast, isCreatingTournament, creationAttempts, handleCancelSearch, tournamentCreationStatus]);
 
+  // Fetch current user ID
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data?.user) {
+          setCurrentUserId(data.user.id);
+          console.log(`[TOURNAMENT-UI] Current user ID: ${data.user.id}`);
+        }
+      } catch (error) {
+        console.error("[TOURNAMENT-UI] Error fetching user:", error);
+      }
+    };
+    
+    fetchUser();
+  }, []);
+
+  // Lobby subscription and participants tracking
   useEffect(() => {
     if (!lobbyId) return;
 
@@ -173,7 +185,7 @@ const QuickTournamentSearch = () => {
           
           setTimeout(() => {
             navigate(`/tournaments/${lobbyData.tournament_id}`);
-          }, 1000);
+          }, 500);
           return;
         }
         
@@ -203,6 +215,9 @@ const QuickTournamentSearch = () => {
             description: "Подтвердите свою готовность к началу турнира.",
             variant: "default",
           });
+          
+          // Reset the countdown
+          setCountdownSeconds(30);
         }
         
         if (actualParticipants.length > 0) {
@@ -225,7 +240,7 @@ const QuickTournamentSearch = () => {
             const profile = profiles?.find(p => p.id === participant.user_id);
             return {
               ...participant,
-              profile: profile || { username: 'Unknown Player', avatar_url: null }
+              profile: profile || { username: 'Игрок', avatar_url: null }
             };
           });
           
@@ -237,14 +252,13 @@ const QuickTournamentSearch = () => {
           setReadyPlayers(readyPlayerIds);
           
           console.log(`[TOURNAMENT-UI] Ready players: ${readyPlayerIds.length}/${participantsWithProfiles.length}`);
-          console.log(`[TOURNAMENT-UI] Ready player IDs: `, readyPlayerIds);
           
           if (readyPlayerIds.length === 4 && 
               participantsWithProfiles.length === 4 && 
               isReadyCheckActive && 
               !isCreatingTournament) {
             console.log(`[TOURNAMENT-UI] All 4 players are ready. Triggering tournament creation check`);
-            checkTournamentCreation();
+            setTimeout(() => { checkTournamentCreation(); }, 500);
           }
         } else {
           setLobbyParticipants([]);
@@ -255,8 +269,10 @@ const QuickTournamentSearch = () => {
       }
     };
 
+    // Initial fetch
     fetchLobbyParticipants();
-
+    
+    // Set up subscriptions
     const lobbyChannel = supabase
       .channel('lobby_changes')
       .on('postgres_changes', {
@@ -279,32 +295,6 @@ const QuickTournamentSearch = () => {
         filter: `id=eq.${lobbyId}`
       }, (payload: any) => {
         console.log("[TOURNAMENT-UI] Lobby status changed:", payload);
-        const newStatus = payload.new.status;
-        const tournamentId = payload.new.tournament_id;
-        const currentPlayers = payload.new.current_players;
-        const maxPlayers = payload.new.max_players;
-        
-        if (newStatus === 'ready_check' && currentPlayers === maxPlayers) {
-          setReadyCheckActive(true);
-          setCountdownSeconds(30);
-          
-          toast({
-            title: "Игроки найдены!",
-            description: "Подтвердите свою готовность к началу турнира.",
-            variant: "default",
-          });
-        } else if (newStatus === 'active' && tournamentId) {
-          toast({
-            title: "Турнир начинается!",
-            description: "Все игроки готовы. Переход к турниру...",
-            variant: "default",
-          });
-          
-          setTimeout(() => {
-            navigate(`/tournaments/${tournamentId}`);
-          }, 1000);
-        }
-        
         fetchLobbyParticipants();
       })
       .subscribe();
@@ -315,16 +305,30 @@ const QuickTournamentSearch = () => {
     };
   }, [lobbyId, navigate, toast, readyCheckActive, checkTournamentCreation, isCreatingTournament]);
 
+  // Retry search if needed
   useEffect(() => {
-    if (isSearching && !lobbyId && searchAttempts > 0) {
+    if (isSearching && !lobbyId && searchAttempts > 0 && searchAttempts < 5) {
       const retryTimer = setTimeout(() => {
+        console.log(`[TOURNAMENT-UI] Retrying search, attempt #${searchAttempts + 1}`);
         handleStartSearch(true);
       }, 2000);
       
       return () => clearTimeout(retryTimer);
     }
-  }, [isSearching, lobbyId, searchAttempts]);
+    
+    if (searchAttempts >= 5) {
+      setIsSearching(false);
+      setSearchAttempts(0);
+      
+      toast({
+        title: "Не удалось найти турнир",
+        description: "Слишком много попыток. Пожалуйста, попробуйте позже.",
+        variant: "destructive",
+      });
+    }
+  }, [isSearching, lobbyId, searchAttempts, toast]);
 
+  // Ready check countdown
   useEffect(() => {
     if (!readyCheckActive || countdownSeconds <= 0) return;
     
@@ -335,6 +339,7 @@ const QuickTournamentSearch = () => {
     return () => clearTimeout(timer);
   }, [readyCheckActive, countdownSeconds]);
 
+  // Handle countdown expiration
   useEffect(() => {
     if (readyCheckActive && countdownSeconds === 0) {
       handleCancelSearch();
@@ -346,10 +351,12 @@ const QuickTournamentSearch = () => {
     }
   }, [countdownSeconds, readyCheckActive, toast]);
 
+  // Start search for tournament
   const handleStartSearch = async (isRetry = false) => {
     try {
       console.log(`[TOURNAMENT-UI] Starting tournament search${isRetry ? ' (retry)' : ''}`);
       setIsSearching(true);
+      setIsLoading(true);
       
       if (!isRetry) {
         toast({
@@ -376,15 +383,19 @@ const QuickTournamentSearch = () => {
       }
       
       setSearchAttempts(prev => prev + 1);
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  // Handle user ready check
   const handleReadyCheck = async () => {
     if (!lobbyId || isLoading) return;
     
     try {
       console.log(`[TOURNAMENT-UI] Marking user as ready in lobby ${lobbyId}`);
       setIsLoading(true);
+      
       const result = await markUserAsReady(lobbyId);
       console.log(`[TOURNAMENT-UI] Mark ready result:`, result);
       
@@ -412,12 +423,13 @@ const QuickTournamentSearch = () => {
         
         setTimeout(() => {
           navigate(`/tournaments/${result.tournamentId}`);
-        }, 1000);
-      } else if (readyPlayers.length + 1 === 4 && !isCreatingTournament) {
-        console.log(`[TOURNAMENT-UI] Potentially all players ready. Checking tournament creation...`);
+        }, 800);
+      } else if (readyPlayers.length + 1 >= 3 && !isCreatingTournament) {
+        // If this might complete the ready player set, check for tournament creation
+        console.log(`[TOURNAMENT-UI] May have all players ready now. Checking tournament creation...`);
         setTimeout(() => {
           checkTournamentCreation();
-        }, 500);
+        }, 800);
       }
     } catch (error: any) {
       console.error("[TOURNAMENT-UI] Error marking as ready:", error);
@@ -431,11 +443,12 @@ const QuickTournamentSearch = () => {
     }
   };
 
+  // Check if current user is ready
   const isUserReady = () => {
-    const ready = currentUserId ? readyPlayers.includes(currentUserId) : false;
-    return ready;
+    return currentUserId ? readyPlayers.includes(currentUserId) : false;
   };
 
+  // Render tournament creation status
   const renderTournamentCreationStatus = () => {
     if (!tournamentCreationStatus || tournamentCreationStatus === 'waiting') return null;
     
@@ -456,7 +469,7 @@ const QuickTournamentSearch = () => {
         {tournamentCreationStatus === 'failed' && (
           <div className="text-red-500 flex items-center justify-center">
             <AlertTriangle className="mr-2" size={16} />
-            Ошибка создания турнира. Отмена поиска...
+            Ошибка создания турнира. Повторная попытка...
           </div>
         )}
         {tournamentCreationStatus === 'error' && (
@@ -483,7 +496,11 @@ const QuickTournamentSearch = () => {
           <button 
             className="btn-primary"
             onClick={() => handleStartSearch()}
+            disabled={isLoading}
           >
+            {isLoading ? (
+              <Loader2 className="animate-spin mr-2" size={18} />
+            ) : null}
             Найти турнир
           </button>
         </div>
@@ -499,7 +516,7 @@ const QuickTournamentSearch = () => {
           {lobbyParticipants.length > 0 && (
             <div className="mb-4">
               <h4 className="text-sm font-medium mb-2">Участники ({lobbyParticipants.length}/4):</h4>
-              <div className="flex justify-center gap-2">
+              <div className="flex flex-wrap justify-center gap-2">
                 {lobbyParticipants.map((participant, idx) => (
                   <div key={idx} className="glass-card p-2 text-xs">
                     {participant.profile?.username || 'Игрок'}
@@ -517,7 +534,9 @@ const QuickTournamentSearch = () => {
           <button 
             className="btn-outline bg-red-500/20 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
             onClick={handleCancelSearch}
+            disabled={isLoading}
           >
+            {isLoading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
             Отменить поиск
           </button>
         </div>
@@ -577,7 +596,11 @@ const QuickTournamentSearch = () => {
               onClick={handleCancelSearch}
               disabled={isLoading}
             >
-              <X size={18} className="mr-2" />
+              {isLoading ? (
+                <Loader2 size={18} className="animate-spin mr-2" />
+              ) : (
+                <X size={18} className="mr-2" />
+              )}
               Отмена
             </button>
           </div>

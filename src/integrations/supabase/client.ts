@@ -21,6 +21,7 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache', // Prevent caching for all requests
     },
+    // Set a custom fetch function that properly handles promises
     fetch: (url, options) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout

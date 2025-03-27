@@ -144,6 +144,32 @@ export const searchForQuickTournament = async () => {
           throw new Error("Сервер не вернул ID лобби. Пожалуйста, попробуйте снова.");
         }
         
+        // After getting a lobby ID, explicitly check if it has reached 4 players
+        // and should trigger a ready check
+        const { data: lobbyData, error: lobbyError } = await supabase
+          .from('tournament_lobbies')
+          .select('id, current_players, status')
+          .eq('id', data)
+          .single();
+          
+        if (!lobbyError && lobbyData && lobbyData.current_players === 4 && lobbyData.status === 'waiting') {
+          console.log(`[TOURNAMENT] Lobby ${data} has reached 4 players, updating to ready_check`);
+          
+          // Update the lobby status to ready_check
+          const { error: updateError } = await supabase
+            .from('tournament_lobbies')
+            .update({ 
+              status: 'ready_check',
+              ready_check_started_at: new Date().toISOString()
+            })
+            .eq('id', data)
+            .eq('current_players', 4);
+            
+          if (updateError) {
+            console.error("[TOURNAMENT] Error updating lobby to ready_check:", updateError);
+          }
+        }
+        
         return data;
       } catch (error) {
         if (retries > 0) {
@@ -162,9 +188,24 @@ export const searchForQuickTournament = async () => {
     // Get lobby status
     const { data: lobbyData } = await supabase
       .from('tournament_lobbies')
-      .select('status')
+      .select('status, current_players')
       .eq('id', lobbyId)
       .single();
+      
+    // If lobby has 4 players but is still in 'waiting' status, update it
+    if (lobbyData && lobbyData.current_players === 4 && lobbyData.status === 'waiting') {
+      console.log(`[TOURNAMENT] Lobby ${lobbyId} has 4 players but status is 'waiting', updating to 'ready_check'`);
+      
+      await supabase
+        .from('tournament_lobbies')
+        .update({ 
+          status: 'ready_check',
+          ready_check_started_at: new Date().toISOString()
+        })
+        .eq('id', lobbyId)
+        .eq('status', 'waiting')
+        .eq('current_players', 4);
+    }
       
     const initialStatus = (lobbyData?.status === 'ready_check') ? 'ready' : 'searching';
     console.log(`[TOURNAMENT] Lobby ${lobbyId} has status: ${lobbyData?.status}, setting initial status to: ${initialStatus}`);

@@ -77,11 +77,12 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     checkTournamentCreation
   );
 
-  // Use the subscriptions hook
+  // Use the subscriptions hook - now passing dispatch
   useSearchSubscriptions(
     state.isSearching,
     state.lobbyId,
-    refreshLobbyData
+    refreshLobbyData,
+    dispatch
   );
 
   // Effect to ensure lobby participant statuses are synced
@@ -117,14 +118,87 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     }
   }, [state.isSearching, state.lobbyId, state.readyCheckActive, refreshLobbyData]);
 
+  // Check lobby status more often to catch 'ready_check' transition
+  useEffect(() => {
+    if (state.isSearching && state.lobbyId && !state.readyCheckActive) {
+      const checkLobbyStatus = async () => {
+        try {
+          const { data: lobby, error } = await supabase
+            .from('tournament_lobbies')
+            .select('status, current_players')
+            .eq('id', state.lobbyId)
+            .single();
+            
+          if (error) {
+            console.error("[TOURNAMENT-UI] Error checking lobby status:", error);
+            return;
+          }
+          
+          if (lobby.status === 'ready_check') {
+            console.log('[TOURNAMENT-UI] Detected ready_check status during polling');
+            dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
+            dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });
+            
+            // Update all searching players to ready status
+            const { error: updateError } = await supabase
+              .from('lobby_participants')
+              .update({ status: 'ready' })
+              .eq('lobby_id', state.lobbyId)
+              .eq('status', 'searching');
+              
+            if (updateError) {
+              console.error("[TOURNAMENT-UI] Error updating participants to ready status:", updateError);
+            }
+            
+            await refreshLobbyData(state.lobbyId);
+          }
+          
+          if (lobby.current_players === 4 && lobby.status === 'waiting') {
+            console.log('[TOURNAMENT-UI] Lobby has 4 players but is still in waiting status, triggering ready check');
+            
+            // If we have 4 players but status is still 'waiting', try to update it
+            const { error: updateError } = await supabase
+              .from('tournament_lobbies')
+              .update({ 
+                status: 'ready_check', 
+                ready_check_started_at: new Date().toISOString() 
+              })
+              .eq('id', state.lobbyId)
+              .eq('status', 'waiting')
+              .eq('current_players', 4);
+              
+            if (updateError) {
+              console.error("[TOURNAMENT-UI] Error updating lobby to ready_check:", updateError);
+            } else {
+              console.log('[TOURNAMENT-UI] Successfully updated lobby to ready_check');
+              dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
+              dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });
+              await refreshLobbyData(state.lobbyId);
+            }
+          }
+        } catch (err) {
+          console.error("[TOURNAMENT-UI] Error in checkLobbyStatus:", err);
+        }
+      };
+      
+      // Check immediately and then every 3 seconds
+      checkLobbyStatus();
+      const intervalId = setInterval(checkLobbyStatus, 3000);
+      
+      return () => clearInterval(intervalId);
+    }
+  }, [state.isSearching, state.lobbyId, state.readyCheckActive, refreshLobbyData, dispatch]);
+
   // Debug logging for state changes
   useEffect(() => {
     console.log("[TOURNAMENT-UI] State updated:", {
       readyPlayers: state.readyPlayers,
       participants: state.lobbyParticipants.map(p => ({ id: p.user_id, ready: p.is_ready, status: p.status })),
-      readyCheckActive: state.readyCheckActive
+      readyCheckActive: state.readyCheckActive,
+      lobbyId: state.lobbyId,
+      isSearching: state.isSearching
     });
-  }, [state.readyPlayers, state.lobbyParticipants, state.readyCheckActive]);
+  }, [state.readyPlayers, state.lobbyParticipants, state.readyCheckActive, state.lobbyId, state.isSearching]);
 
   // Effect to handle cleanup when component unmounts
   useEffect(() => {

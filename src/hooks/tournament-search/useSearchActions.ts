@@ -127,7 +127,7 @@ export const useSearchActions = (
       try {
         const initialLobbyStatus = await fetchLobbyStatus(lobbyId);
         dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: initialLobbyStatus.status === 'ready_check' });
-        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });  // Default countdown value
+        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // Увеличиваем до 120 секунд (2 минуты)
 
         const initialParticipants = await fetchLobbyParticipants(lobbyId);
         console.log(`[TOURNAMENT-UI] Initial participants:`, initialParticipants);

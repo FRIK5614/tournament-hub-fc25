@@ -1,10 +1,11 @@
 
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
 interface TournamentIntroProps {
   onStartSearch: () => void;
   isLoading: boolean;
 }
-
-import { Loader2 } from 'lucide-react';
 
 const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => {
   return (
@@ -14,8 +15,8 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
         Победы повышают ваш рейтинг для участия в долгосрочных турнирах.
       </p>
       
-      <button 
-        className="btn-primary"
+      <Button 
+        className="bg-green-600 hover:bg-green-700"
         onClick={onStartSearch}
         disabled={isLoading}
       >
@@ -23,7 +24,7 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
           <Loader2 className="animate-spin mr-2" size={18} />
         ) : null}
         Найти турнир
-      </button>
+      </Button>
     </div>
   );
 };

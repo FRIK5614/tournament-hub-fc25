@@ -17,10 +17,12 @@ const QuickTournamentSearch = () => {
     isLoading,
     tournamentCreationStatus,
     isCreatingTournament,
+    tournamentId,
     handleStartSearch,
     handleCancelSearch,
     handleReadyCheck,
-    isUserReady
+    isUserReady,
+    checkTournamentCreation
   } = useTournamentSearch();
 
   // Debug logging with null checks

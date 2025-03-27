@@ -8,13 +8,13 @@ export const useSearchSubscriptions = (
   refreshLobbyData: (lobbyId: string) => Promise<void>,
   dispatch: React.Dispatch<any>,
 ) => {
-  // Set up real-time subscriptions for lobby changes
+  // Настройка real-time подписок на изменения в лобби
   useEffect(() => {
     if (!isSearching || !lobbyId) return;
 
     console.log(`[TOURNAMENT-UI] Setting up realtime subscriptions for lobby ${lobbyId}`);
     
-    // Subscribe to lobby changes
+    // Подписка на изменения лобби
     const lobbyChannel = supabase
       .channel(`lobby_changes_${lobbyId}`)
       .on(
@@ -28,23 +28,23 @@ export const useSearchSubscriptions = (
         (payload) => {
           console.log('[TOURNAMENT-UI] Lobby changed:', payload.new);
           
-          // If player count changed, refresh participant data
+          // Если количество игроков изменилось, обновляем данные о участниках
           if (payload.new.current_players !== payload.old.current_players) {
             console.log('[TOURNAMENT-UI] Player count changed, refreshing participants');
             refreshLobbyData(lobbyId);
           }
           
-          // Check if status changed to ready_check
+          // Проверяем, изменился ли статус на ready_check
           if (payload.new.status === 'ready_check' && payload.old.status !== 'ready_check') {
             console.log('[TOURNAMENT-UI] Ready check activated!');
             dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
-            dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });
+            dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // Увеличиваем до 120 секунд (2 минуты)
             
-            // Force refresh participants data
+            // Принудительно обновляем данные о участниках
             refreshLobbyData(lobbyId);
           }
           
-          // Check if a tournament was created
+          // Проверяем, был ли создан турнир
           if (payload.new.tournament_id && !payload.old.tournament_id) {
             console.log(`[TOURNAMENT-UI] Tournament created: ${payload.new.tournament_id}`);
             dispatch({ type: 'SET_TOURNAMENT_ID', payload: payload.new.tournament_id });
@@ -53,26 +53,26 @@ export const useSearchSubscriptions = (
       )
       .subscribe();
 
-    // Subscribe to participant changes (both INSERT and UPDATE)
+    // Подписка на изменения участников (как INSERT, так и UPDATE)
     const participantsChannel = supabase
       .channel(`participants_changes_${lobbyId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
+          event: '*',  // Слушаем все события (INSERT, UPDATE, DELETE)
           schema: 'public',
           table: 'lobby_participants',
           filter: `lobby_id=eq.${lobbyId}`
         },
         (payload) => {
           console.log('[TOURNAMENT-UI] Participant changed:', payload);
-          // Any change to participants should trigger a refresh
+          // Любое изменение участников должно вызывать обновление
           refreshLobbyData(lobbyId);
         }
       )
       .subscribe();
 
-    // Poll for changes every 3 seconds as a backup mechanism
+    // Опрашиваем изменения каждые 3 секунды как запасной механизм
     const intervalId = setInterval(() => {
       console.log('[TOURNAMENT-UI] Polling for lobby data updates');
       refreshLobbyData(lobbyId);

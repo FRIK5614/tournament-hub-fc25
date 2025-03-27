@@ -13,7 +13,7 @@ export const useReadyCheck = (
 ) => {
   const { toast } = useToast();
 
-  // Start countdown timer when ready check is active
+  // Установка таймера обратного отсчета, когда проверка готовности активна
   useEffect(() => {
     let countdownTimer: number | undefined;
     
@@ -30,12 +30,12 @@ export const useReadyCheck = (
     };
   }, [state.readyCheckActive, state.countdownSeconds, dispatch]);
 
-  // Fix desynchronized player states when ready check begins
+  // Исправление десинхронизации состояний игроков при начале проверки готовности
   useEffect(() => {
     if (state.readyCheckActive && state.lobbyId && state.currentUserId) {
       const updatePlayerState = async () => {
         try {
-          // Check current player's status
+          // Проверяем статус текущего игрока
           const { data: currentPlayer } = await supabase
             .from('lobby_participants')
             .select('status, is_ready')
@@ -43,7 +43,7 @@ export const useReadyCheck = (
             .eq('user_id', state.currentUserId)
             .maybeSingle();
 
-          // If player is in 'searching' status when ready check is active, update it to 'ready'
+          // Если игрок в статусе 'searching' во время проверки готовности, обновляем его до 'ready'
           if (currentPlayer && currentPlayer.status === 'searching') {
             console.log("[TOURNAMENT-UI] Fixing player status to 'ready' during ready check");
             await supabase
@@ -61,7 +61,7 @@ export const useReadyCheck = (
     }
   }, [state.readyCheckActive, state.lobbyId, state.currentUserId]);
 
-  // Check if all players are ready periodically
+  // Периодическая проверка, все ли игроки готовы
   useEffect(() => {
     if (state.readyCheckActive && state.lobbyId && state.lobbyParticipants.length === 4) {
       const checkAllReady = async () => {
@@ -73,7 +73,7 @@ export const useReadyCheck = (
           if (allReady && !state.isCreatingTournament && !state.tournamentId) {
             console.log("[TOURNAMENT-UI] All players are ready, triggering tournament creation");
             
-            // First verify no tournament exists yet
+            // Сначала проверяем, что турнир еще не существует
             const { data: lobby } = await supabase
               .from('tournament_lobbies')
               .select('tournament_id')
@@ -92,7 +92,7 @@ export const useReadyCheck = (
         }
       };
       
-      // Check immediately and then every second
+      // Проверка сразу и затем каждую секунду
       checkAllReady();
       const intervalId = setInterval(checkAllReady, 1000);
       
@@ -108,16 +108,15 @@ export const useReadyCheck = (
     dispatch
   ]);
 
-  // Handle countdown completion
+  // Обработка завершения обратного отсчета
   useEffect(() => {
     if (state.countdownSeconds === 0 && state.readyCheckActive) {
       const handleCountdownComplete = async () => {
         try {
-          // Don't reset ready check active flag yet, wait for tournament creation check
-          // dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+          // Пока не сбрасываем флаг активной проверки готовности, ждем проверки создания турнира
           
           if (state.readyPlayers.length === state.lobbyParticipants.length) {
-            // First check if tournament already exists
+            // Сначала проверяем, что турнир уже существует
             const { data: lobby } = await supabase
               .from('tournament_lobbies')
               .select('tournament_id')
@@ -128,7 +127,7 @@ export const useReadyCheck = (
               console.log(`[TOURNAMENT-UI] Tournament already exists on countdown completion: ${lobby.tournament_id}`);
               dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
             } else {
-              // Use the extracted checkTournamentCreation logic
+              // Используем извлеченную логику checkTournamentCreation
               await checkTournamentCreation();
             }
           } else {
@@ -140,7 +139,7 @@ export const useReadyCheck = (
             await handleCancelSearch();
           }
           
-          // Now reset the ready check active flag
+          // Теперь сбрасываем флаг активной проверки готовности
           dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
         } catch (error) {
           console.error("[TOURNAMENT-UI] Error handling countdown completion:", error);

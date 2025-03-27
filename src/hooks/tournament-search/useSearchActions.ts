@@ -1,4 +1,3 @@
-
 import { useCallback } from 'react';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -119,14 +118,7 @@ export const useSearchActions = (
       dispatch({ type: 'SET_LOADING', payload: false });
     } catch (error: any) {
       console.error("Ошибка при поиске лобби:", error);
-      toast({
-        title: "Ошибка поиска",
-        description: error.message || "Не удалось начать поиск лобби",
-        variant: "destructive",
-      });
-      dispatch({ type: 'SET_LOADING', payload: false });
       
-      // Show retry toast after a failure
       if (!isRetry) {
         toast({
           title: "Повторная попытка поиска",
@@ -134,7 +126,6 @@ export const useSearchActions = (
           variant: "default",
         });
         
-        // Automatically retry after a short delay (only once)
         setTimeout(() => {
           handleStartSearch(true);
         }, 2000);

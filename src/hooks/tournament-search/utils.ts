@@ -35,6 +35,65 @@ export const ensureParticipantStatus = async (
 };
 
 /**
+ * Fetch lobby status from the database
+ */
+export const fetchLobbyStatus = async (lobbyId: string) => {
+  if (!lobbyId) {
+    throw new Error('Lobby ID is required');
+  }
+
+  const { data, error } = await supabase
+    .from('tournament_lobbies')
+    .select('status, current_players, ready_check_started_at, tournament_id')
+    .eq('id', lobbyId)
+    .single();
+
+  if (error) {
+    console.error('[TOURNAMENT-UI] Error fetching lobby status:', error);
+    throw error;
+  }
+
+  return data;
+};
+
+/**
+ * Fetch lobby participants from the database
+ */
+export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyParticipant[]> => {
+  if (!lobbyId) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('lobby_participants')
+      .select(`
+        id,
+        user_id,
+        lobby_id,
+        status,
+        is_ready,
+        profile:profiles(id, username, avatar_url)
+      `)
+      .eq('lobby_id', lobbyId);
+
+    if (error) {
+      console.error('[TOURNAMENT-UI] Error fetching lobby participants:', error);
+      throw error;
+    }
+
+    // Enhance with missing profile data if needed
+    const enhancedParticipants = await enrichParticipantsWithProfiles(data || []);
+    
+    // Convert to LobbyParticipant format
+    return parseLobbyParticipants(enhancedParticipants);
+  } catch (error) {
+    console.error('[TOURNAMENT-UI] Error in fetchLobbyParticipants:', error);
+    return [];
+  }
+};
+
+/**
  * Handle missing profile data in participant list
  */
 export const enrichParticipantsWithProfiles = async (
@@ -91,6 +150,7 @@ export const parseLobbyParticipants = (data: any[]): LobbyParticipant[] => {
   return data.map(item => ({
     id: item.id,
     user_id: item.user_id,
+    lobby_id: item.lobby_id || '', // Ensure lobby_id is always present
     status: item.status || 'searching',
     is_ready: item.is_ready || false,
     profile: item.profile || null

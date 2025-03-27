@@ -1,5 +1,5 @@
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { TournamentSearchState } from './types';
 import { TournamentSearchAction } from './reducer';
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +12,9 @@ export const useReadyCheck = (
   checkTournamentCreation: () => Promise<void>
 ) => {
   const { toast } = useToast();
+  // Добавляем ref для отслеживания последнего состояния
+  const lastStatusRef = useRef<string | null>(null);
+  const debounceTimerRef = useRef<number | null>(null);
 
   // Установка таймера обратного отсчета, когда проверка готовности активна
   useEffect(() => {
@@ -96,32 +99,7 @@ export const useReadyCheck = (
               needsUpdate = true;
             }
             
-            // Если игроков меньше 4, но статус ready_check, то сбрасываем статус только если
-            // текущий пользователь еще участвует в лобби
-            if (lobby.current_players < 4 && lobby.status === 'ready_check') {
-              // Сначала проверим, что текущий пользователь все еще в лобби
-              const { data: isUserStillInLobby, error: checkUserError } = await supabase
-                .from('lobby_participants')
-                .select('id')
-                .eq('lobby_id', state.lobbyId)
-                .eq('user_id', state.currentUserId)
-                .eq('status', 'ready')
-                .maybeSingle();
-                
-              if (!checkUserError && !isUserStillInLobby) {
-                console.log("[TOURNAMENT-UI] User left lobby, not resetting ready_check status");
-              } else {
-                console.log("[TOURNAMENT-UI] Not enough players, resetting ready_check to waiting");
-                updates.status = 'waiting';
-                updates.ready_check_started_at = null;
-                needsUpdate = true;
-                
-                // Сбрасываем флаг активной проверки готовности локально
-                dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
-              }
-            }
-            
-            // Применяем обновления, если они есть
+            // Применяем обновления, если необходимо
             if (needsUpdate) {
               await supabase
                 .from('tournament_lobbies')
@@ -138,7 +116,7 @@ export const useReadyCheck = (
     }
   }, [state.readyCheckActive, state.lobbyId, state.currentUserId, dispatch]);
 
-  // Периодическая проверка, все ли игроки готовы
+  // Модифицированная проверка состояния лобби с защитой от мигания состояний
   useEffect(() => {
     if (!state.readyCheckActive || !state.lobbyId) return;
     
@@ -175,6 +153,37 @@ export const useReadyCheck = (
           dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
           return;
         }
+        
+        // Для предотвращения мигания состояний, сохраняем предыдущее состояние
+        if (lastStatusRef.current === null) {
+          lastStatusRef.current = lobby?.status || null;
+        }
+        
+        // Используем debouncing для предотвращения частых переключений состояния
+        if (lastStatusRef.current !== lobby?.status) {
+          console.log(`[TOURNAMENT-UI] Lobby status changed from ${lastStatusRef.current} to ${lobby?.status}`);
+          
+          // Очищаем предыдущий таймер
+          if (debounceTimerRef.current !== null) {
+            window.clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+          }
+          
+          // Устанавливаем новый таймер для применения изменения после задержки
+          debounceTimerRef.current = window.setTimeout(() => {
+            // Применяем изменение только если оно стабильно в течение задержки
+            if (lobby?.status === 'ready_check' && lastStatusRef.current !== 'ready_check') {
+              console.log("[TOURNAMENT-UI] Setting ready check active to true after debounce");
+              dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
+            } else if (lobby?.status === 'waiting' && lastStatusRef.current === 'ready_check') {
+              console.log("[TOURNAMENT-UI] Setting ready check active to false after debounce");
+              dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+            }
+            
+            lastStatusRef.current = lobby?.status || null;
+            debounceTimerRef.current = null;
+          }, 2000); // 2 секунды задержки для стабилизации состояния
+        }
           
         // Если лобби найдено, но в нем меньше 4 игроков и оно в статусе ready_check
         if (lobby && lobby.current_players < 4 && lobby.status === 'ready_check') {
@@ -189,18 +198,22 @@ export const useReadyCheck = (
             
           // Только если пользователь все еще в лобби, сбрасываем статус
           if (isUserInLobby) {
-            console.log(`[TOURNAMENT-UI] Reverting ready_check to waiting due to player count (${lobby.current_players}/4)`);
-            await supabase
-              .from('tournament_lobbies')
-              .update({ 
-                status: 'waiting', 
-                ready_check_started_at: null,
-                current_players: lobby.current_players
-              })
-              .eq('id', state.lobbyId);
-              
-            // Сбрасываем флаг активной проверки готовности
-            dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+            console.log(`[TOURNAMENT-UI] Not enough players (${lobby.current_players}/4), requesting reset to waiting`);
+            
+            // Проверяем, не изменилось ли состояние за последние секунды
+            if (debounceTimerRef.current === null) {
+              await supabase
+                .from('tournament_lobbies')
+                .update({ 
+                  status: 'waiting', 
+                  ready_check_started_at: null,
+                  current_players: lobby.current_players
+                })
+                .eq('id', state.lobbyId);
+                
+              // Сбрасываем флаг активной проверки готовности
+              dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+            }
           }
           
           return;
@@ -339,9 +352,9 @@ export const useReadyCheck = (
       }
     };
     
-    // Проверка сразу и затем каждые 2 секунды (уменьшаем частоту для снижения нагрузки)
+    // Проверка сразу и затем каждые 3 секунды (увеличиваем интервал для снижения нагрузки)
     checkAllReady();
-    const intervalId = setInterval(checkAllReady, 2000);
+    const intervalId = setInterval(checkAllReady, 3000);
     
     return () => clearInterval(intervalId);
   }, [

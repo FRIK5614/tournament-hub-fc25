@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
 import { updateLobbyPlayerCount as updateLobbyPlayerCountFromUtils } from "@/hooks/tournament-search/utils";
@@ -146,6 +145,27 @@ export const searchForQuickTournament = async () => {
         
       if (activeLobby && !lobbyError && !activeLobby.tournament_id) {
         console.log(`[TOURNAMENT] User is already in active lobby ${activeLobby.id} with status ${activeLobby.status}`);
+        
+        // Проверяем, не является ли лобби "зависшим" (с некорректным количеством игроков)
+        const { data: actualParticipants, error: countError } = await supabase
+          .from('lobby_participants')
+          .select('id')
+          .eq('lobby_id', activeLobby.id)
+          .in('status', ['searching', 'ready']);
+          
+        const actualParticipantCount = (actualParticipants || []).length;
+        
+        if (countError) {
+          console.error("[TOURNAMENT] Error counting participants:", countError);
+        } else if (actualParticipantCount !== activeLobby.current_players) {
+          console.log(`[TOURNAMENT] Fixing lobby player count: actual ${actualParticipantCount}, recorded ${activeLobby.current_players}`);
+          
+          // Исправляем количество игроков
+          await supabase
+            .from('tournament_lobbies')
+            .update({ current_players: actualParticipantCount })
+            .eq('id', activeLobby.id);
+        }
         
         // Make sure max_players is set to 4
         if (activeLobby.max_players !== 4) {
@@ -449,6 +469,12 @@ export const leaveQuickTournament = async (lobbyId: string) => {
     
     console.log(`[TOURNAMENT] User ${user.user.id} leaving lobby ${lobbyId}`);
     
+    // Очищаем данные о лобби в localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tournament_lobby_id');
+      localStorage.removeItem('tournament_search_state');
+    }
+    
     // Mark player as having left
     await supabase
       .from('lobby_participants')
@@ -458,6 +484,32 @@ export const leaveQuickTournament = async (lobbyId: string) => {
       
     // Update lobby player count
     await updateLobbyPlayerCountLocal(lobbyId);
+    
+    // Если лобби было в статусе 'ready_check', сбрасываем его до 'waiting'
+    const { data: lobby } = await supabase
+      .from('tournament_lobbies')
+      .select('status')
+      .eq('id', lobbyId)
+      .maybeSingle();
+      
+    if (lobby && lobby.status === 'ready_check') {
+      console.log(`[TOURNAMENT] Resetting lobby ${lobbyId} from ready_check to waiting`);
+      
+      await supabase
+        .from('tournament_lobbies')
+        .update({ 
+          status: 'waiting', 
+          ready_check_started_at: null 
+        })
+        .eq('id', lobbyId)
+        .eq('status', 'ready_check');
+        
+      // Сбрасываем флаги готовности всех игроков
+      await supabase
+        .from('lobby_participants')
+        .update({ is_ready: false })
+        .eq('lobby_id', lobbyId);
+    }
     
     console.log(`[TOURNAMENT] User ${user.user.id} successfully left lobby ${lobbyId}`);
     return { success: true };

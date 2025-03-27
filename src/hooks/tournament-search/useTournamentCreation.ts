@@ -12,8 +12,11 @@ export const useTournamentCreation = (
   handleCancelSearch: () => Promise<void>
 ) => {
   const { toast } = useToast();
+  
+  // Добавляем флаг для отслеживания количества попыток создания турнира
+  const MAX_CREATION_ATTEMPTS = 3;
 
-  const checkTournamentCreation = useCallback(async () => {
+  const checkTournamentCreation = useCallback(async (attempt = 0) => {
     try {
       if (state.isCreatingTournament || !state.lobbyId) {
         console.log("[TOURNAMENT-UI] Tournament creation already in progress or no lobby");
@@ -38,7 +41,7 @@ export const useTournamentCreation = (
         return;
       }
 
-      console.log("[TOURNAMENT-UI] Initiating tournament creation");
+      console.log(`[TOURNAMENT-UI] Initiating tournament creation (attempt ${attempt + 1}/${MAX_CREATION_ATTEMPTS})`);
       dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: true });
       dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'checking' });
 
@@ -67,90 +70,144 @@ export const useTournamentCreation = (
         console.log(`[TOURNAMENT-UI] Not enough players to create tournament: ${lobby.current_players}/4`);
         dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'error' });
-        toast({
-          title: "Недостаточно игроков",
-          description: "Для создания турнира необходимо 4 игрока",
-          variant: "destructive",
-        });
+        
+        if (attempt < MAX_CREATION_ATTEMPTS - 1) {
+          // Пробуем еще раз с задержкой
+          console.log(`[TOURNAMENT-UI] Retrying tournament creation in 2 seconds...`);
+          
+          setTimeout(() => {
+            checkTournamentCreation(attempt + 1);
+          }, 2000);
+        } else {
+          console.log(`[TOURNAMENT-UI] Max creation attempts (${MAX_CREATION_ATTEMPTS}) reached. Giving up.`);
+          
+          toast({
+            title: "Ошибка создания турнира",
+            description: "Не удалось создать турнир из-за недостаточного количества игроков",
+            variant: "destructive",
+          });
+          
+          await handleCancelSearch();
+        }
+        
         return;
       }
 
+      // Создаем турнир
+      dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'creating' });
+      
       try {
-        console.log("[TOURNAMENT-UI] Creating tournament with retry mechanism");
+        console.log("[TOURNAMENT-UI] Creating tournament for lobby:", state.lobbyId);
+        const result = await createTournamentWithRetry(state.lobbyId);
         
-        // Используем улучшенную функцию с повторными попытками
-        const { tournamentId, created } = await createTournamentWithRetry(state.lobbyId);
-        
-        if (tournamentId) {
-          console.log(`[TOURNAMENT-UI] Tournament successfully created: ${tournamentId}`);
-          dispatch({ type: 'SET_TOURNAMENT_ID', payload: tournamentId });
-          dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
+        if (result.success) {
+          console.log(`[TOURNAMENT-UI] Tournament created successfully with ID: ${result.tournamentId}`);
           
-          toast({
-            title: "Турнир создан",
-            description: "Переход на страницу турнира...",
-            variant: "default",
-          });
+          // Double-check if the lobby was properly updated with the tournament_id
+          const { data: updatedLobby } = await supabase
+            .from('tournament_lobbies')
+            .select('tournament_id')
+            .eq('id', state.lobbyId)
+            .single();
+            
+          if (updatedLobby?.tournament_id) {
+            dispatch({ type: 'SET_TOURNAMENT_ID', payload: updatedLobby.tournament_id });
+            dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
+            
+            toast({
+              title: "Турнир создан!",
+              description: "Подготовка к началу турнира...",
+              variant: "default",
+            });
+          } else if (result.tournamentId) {
+            // Если ID турнира есть в ответе, но не обновился в лобби, обновляем лобби вручную
+            console.log(`[TOURNAMENT-UI] Manually updating lobby with tournament ID: ${result.tournamentId}`);
+            
+            await supabase
+              .from('tournament_lobbies')
+              .update({ 
+                tournament_id: result.tournamentId,
+                status: 'active',
+                started_at: new Date().toISOString()
+              })
+              .eq('id', state.lobbyId);
+              
+            dispatch({ type: 'SET_TOURNAMENT_ID', payload: result.tournamentId });
+            dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
+          }
         } else {
-          throw new Error("Турнир не был создан, но ошибки не возникло");
+          throw new Error("Не удалось создать турнир на сервере");
         }
       } catch (error: any) {
-        console.error("[TOURNAMENT-UI] Error in tournament creation:", error);
-        
-        // Переходим в режим ожидания и повторной попытки
+        console.error("[TOURNAMENT-UI] Error creating tournament:", error);
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'failed' });
-        toast({
-          title: "Ошибка создания турнира",
-          description: "Пробуем еще раз...",
-          variant: "destructive",
-        });
         
-        // Подождем 2 секунды
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Проверим, не создан ли турнир за это время
-        const { data: updatedLobby } = await supabase
+        // Проверяем турнир после ошибки, возможно он все же был создан
+        const { data: checkLobby } = await supabase
           .from('tournament_lobbies')
           .select('tournament_id')
           .eq('id', state.lobbyId)
           .maybeSingle();
           
-        if (updatedLobby?.tournament_id) {
-          console.log(`[TOURNAMENT-UI] Tournament was created by another process: ${updatedLobby.tournament_id}`);
-          dispatch({ type: 'SET_TOURNAMENT_ID', payload: updatedLobby.tournament_id });
+        if (checkLobby?.tournament_id) {
+          console.log(`[TOURNAMENT-UI] Found tournament ID after error: ${checkLobby.tournament_id}`);
+          dispatch({ type: 'SET_TOURNAMENT_ID', payload: checkLobby.tournament_id });
           dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
-        } else {
-          // Если турнир все еще не создан, перезапустим процесс
-          dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'error' });
-          dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
-          
-          // Увеличиваем задержку между попытками
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Попробуем создать турнир еще раз с небольшой задержкой
-          dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
+          return;
         }
-      } finally {
-        if (!state.tournamentId) {
+        
+        // Если это не последняя попытка, пробуем создать турнир еще раз
+        if (attempt < MAX_CREATION_ATTEMPTS - 1) {
+          console.log(`[TOURNAMENT-UI] Retrying tournament creation in 3 seconds (attempt ${attempt + 1}/${MAX_CREATION_ATTEMPTS})`);
+          
+          setTimeout(() => {
+            checkTournamentCreation(attempt + 1);
+          }, 3000);
+        } else {
+          // Максимальное количество попыток исчерпано
+          console.log(`[TOURNAMENT-UI] Max creation attempts (${MAX_CREATION_ATTEMPTS}) reached. Giving up.`);
+          
+          toast({
+            title: "Ошибка создания турнира",
+            description: "Не удалось создать турнир после нескольких попыток. Попробуйте снова позже.",
+            variant: "destructive",
+          });
+          
           dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
+          await handleCancelSearch();
         }
       }
     } catch (error: any) {
-      console.error("[TOURNAMENT-UI] Fatal error in tournament creation:", error);
-      
-      toast({
-        title: "Критическая ошибка создания турнира",
-        description: error.message || "Произошла непредвиденная ошибка",
-        variant: "destructive",
-      });
+      console.error("[TOURNAMENT-UI] Error in checkTournamentCreation:", error);
       
       dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
       dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'error' });
       
-      // Возможно, стоит отменить поиск при критической ошибке
-      await handleCancelSearch();
+      toast({
+        title: "Ошибка создания турнира",
+        description: error.message || "Произошла ошибка при проверке создания турнира",
+        variant: "destructive",
+      });
+      
+      // Если не последняя попытка, повторяем еще раз
+      if (attempt < MAX_CREATION_ATTEMPTS - 1) {
+        console.log(`[TOURNAMENT-UI] Retrying after error in 3 seconds (attempt ${attempt + 1}/${MAX_CREATION_ATTEMPTS})`);
+        
+        setTimeout(() => {
+          checkTournamentCreation(attempt + 1);
+        }, 3000);
+      } else {
+        await handleCancelSearch();
+      }
     }
-  }, [state.isCreatingTournament, state.lobbyId, state.readyPlayers, state.lobbyParticipants, state.tournamentId, dispatch, toast, handleCancelSearch]);
+  }, [
+    state.isCreatingTournament, 
+    state.lobbyId, 
+    state.readyPlayers.length, 
+    state.lobbyParticipants.length,
+    toast,
+    handleCancelSearch
+  ]);
 
   return { checkTournamentCreation };
 };

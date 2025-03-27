@@ -1,2 +1,3 @@
 
-export { useTournamentSearch, LobbyParticipant } from './useTournamentSearch';
+export { useTournamentSearch } from './useTournamentSearch';
+export type { LobbyParticipant } from './types';

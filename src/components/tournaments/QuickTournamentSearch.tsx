@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
@@ -26,7 +25,7 @@ const QuickTournamentSearch = () => {
         const { data: user } = await supabase.auth.getUser();
         if (!user?.user) return;
         
-        // Get the current lobby information
+        // Get the current lobby information with its current player count
         const { data: lobbyData, error: lobbyError } = await supabase
           .from('tournament_lobbies')
           .select('current_players')
@@ -38,17 +37,19 @@ const QuickTournamentSearch = () => {
           return;
         }
         
-        // Get participant data
+        // Get all participant data
         const { data, error } = await supabase
           .from('lobby_participants')
           .select('*, profiles:user_id(username, avatar_url)')
-          .eq('lobby_id', lobbyId);
+          .eq('lobby_id', lobbyId)
+          .eq('status', 'searching');
         
         if (error) {
           console.error("Error fetching lobby participants:", error);
           return;
         }
         
+        console.log("Lobby participants:", data);
         setLobbyParticipants(data || []);
         setReadyPlayers(data?.filter(p => p.is_ready).map(p => p.user_id) || []);
       } catch (error) {
@@ -58,7 +59,7 @@ const QuickTournamentSearch = () => {
 
     fetchLobbyParticipants();
 
-    // Subscribe to realtime changes
+    // Subscribe to ALL changes to lobby_participants (additions and removals)
     const lobbyChannel = supabase
       .channel('lobby_changes')
       .on('postgres_changes', {
@@ -67,10 +68,12 @@ const QuickTournamentSearch = () => {
         table: 'lobby_participants',
         filter: `lobby_id=eq.${lobbyId}`
       }, () => {
+        console.log("Lobby participants changed, refreshing data");
         fetchLobbyParticipants();
       })
       .subscribe();
       
+    // Subscribe to tournament_lobbies changes to detect ready check and tournament start
     const lobbyStatusChannel = supabase
       .channel('lobby_status_changes')
       .on('postgres_changes', {
@@ -79,6 +82,7 @@ const QuickTournamentSearch = () => {
         table: 'tournament_lobbies',
         filter: `id=eq.${lobbyId}`
       }, (payload: any) => {
+        console.log("Lobby status changed:", payload);
         const newStatus = payload.new.status;
         
         if (newStatus === 'ready_check') {
@@ -97,11 +101,12 @@ const QuickTournamentSearch = () => {
           }
         }
         
-        // Update to see if we need to refresh participants
+        // Refresh participants when status changes
         fetchLobbyParticipants();
       })
       .subscribe();
       
+    // Clean up subscriptions
     return () => {
       supabase.removeChannel(lobbyChannel);
       supabase.removeChannel(lobbyStatusChannel);
@@ -171,6 +176,7 @@ const QuickTournamentSearch = () => {
           setLobbyParticipants([{
             user_id: user.user.id,
             lobby_id: newLobbyId,
+            is_ready: false,
             profiles: profile
           }]);
         }
@@ -252,9 +258,9 @@ const QuickTournamentSearch = () => {
     }
   };
 
-  const isUserReady = async () => {
-    const { data: user } = await supabase.auth.getUser();
-    return user?.user ? readyPlayers.includes(user.user.id) : false;
+  const isUserReady = () => {
+    const { data } = supabase.auth.getSession();
+    return readyPlayers.some(id => id === data?.session?.user?.id);
   };
 
   return (

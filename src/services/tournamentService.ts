@@ -21,12 +21,16 @@ export const searchForQuickTournament = async () => {
     const lobbyId = data;
     
     // Check if the user is already in this lobby
-    const { data: existingParticipant } = await supabase
+    const { data: existingParticipant, error: checkError } = await supabase
       .from('lobby_participants')
       .select('id')
       .eq('lobby_id', lobbyId)
       .eq('user_id', user.user.id)
       .maybeSingle();
+    
+    if (checkError) {
+      console.error("Ошибка при проверке участия:", checkError);
+    }
     
     if (!existingParticipant) {
       const { error: joinError } = await supabase

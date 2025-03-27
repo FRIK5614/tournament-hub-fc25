@@ -47,7 +47,7 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
     // Count active participants in lobby
     const { data: participants, error: countError } = await supabase
       .from('lobby_participants')
-      .select('id')
+      .select('id, user_id, status, is_ready')
       .eq('lobby_id', lobbyId)
       .in('status', ['searching', 'ready']);
       
@@ -56,6 +56,8 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
     }
     
     const count = participants?.length || 0;
+    console.log(`[TOURNAMENT] Lobby ${lobbyId} has ${count} active participants:`, 
+      participants?.map(p => ({ id: p.user_id, status: p.status, ready: p.is_ready })));
     
     // Update lobby player count
     const { error: updateError } = await supabase
@@ -65,6 +67,28 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
       
     if (updateError) {
       throw updateError;
+    }
+    
+    // If we have exactly 4 players and lobby status is still 'waiting', update to 'ready_check'
+    if (count === 4) {
+      const { data: lobbyData } = await supabase
+        .from('tournament_lobbies')
+        .select('status')
+        .eq('id', lobbyId)
+        .single();
+        
+      if (lobbyData?.status === 'waiting') {
+        console.log(`[TOURNAMENT] Lobby ${lobbyId} has 4 players, updating to ready_check`);
+        
+        await supabase
+          .from('tournament_lobbies')
+          .update({ 
+            status: 'ready_check', 
+            ready_check_started_at: new Date().toISOString() 
+          })
+          .eq('id', lobbyId)
+          .eq('status', 'waiting');
+      }
     }
     
     console.log(`[TOURNAMENT] Updated lobby ${lobbyId} player count to ${count}`);
@@ -90,7 +114,7 @@ export const searchForQuickTournament = async () => {
     await cleanupStaleLobbyParticipation(user.user.id);
     
     // Try to find or create a lobby with retry
-    const findLobbyWithRetry = async (maxRetries = 2): Promise<string> => {
+    const findLobbyWithRetry = async (maxRetries = 3): Promise<string> => {
       let retries = 0;
       
       while (retries <= maxRetries) {

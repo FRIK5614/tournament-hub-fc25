@@ -167,4 +167,3 @@ export async function cleanupStaleLobbies(userId: string) {
     // Don't throw - this is a helper function
   }
 }
-

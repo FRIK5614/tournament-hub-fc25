@@ -7,7 +7,7 @@ export {
   RETRY_DELAY, 
   delay, 
   withRetry,
-  updateLobbyPlayerCount as updateTournamentLobbyPlayerCount,
+  updateLobbyPlayerCount,
   cleanupStaleLobbies
 } from './utils';
 

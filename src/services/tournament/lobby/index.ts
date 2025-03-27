@@ -4,3 +4,4 @@ export * from './searchService';
 export { leaveQuickTournament as leaveTournamentLobby } from './leaveService';
 export * from './readyCheckService';
 export * from './statusService';
+export * from './tournamentCreationService';

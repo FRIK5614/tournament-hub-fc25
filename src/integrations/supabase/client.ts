@@ -26,12 +26,10 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
       
-      // Add timestamp to URLs to prevent caching when needed
-      const urlWithCache = url.toString().includes('?') 
-        ? `${url}&_t=${Date.now()}` 
-        : `${url}?_t=${Date.now()}`;
+      // Remove the timestamp parameter which is causing the filter parsing error
+      // Don't add timestamp to URLs as it's causing filter parsing issues
       
-      return fetch(urlWithCache, {
+      return fetch(url, {
         ...options,
         signal: controller.signal,
         cache: 'no-cache',

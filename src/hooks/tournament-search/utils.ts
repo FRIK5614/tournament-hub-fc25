@@ -17,6 +17,11 @@ export const fetchLobbyStatus = async (lobbyId: string) => {
       throw lobbyError;
     }
     
+    if (!lobbyData) {
+      console.error("[TOURNAMENT-UI] No lobby data returned");
+      return { status: 'waiting', current_players: 0, max_players: 4, tournament_id: null };
+    }
+    
     console.log(`[TOURNAMENT-UI] Lobby data: status=${lobbyData.status}, players=${lobbyData.current_players}/${lobbyData.max_players}, tournament=${lobbyData.tournament_id || 'none'}`);
     
     return lobbyData;

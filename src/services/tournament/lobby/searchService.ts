@@ -89,15 +89,20 @@ export const searchForQuickTournament = async () => {
       }
     }
     
-    // Call the function to get or create a lobby
-    const { data, error } = await withRetry(async () => {
-      const response = await supabase.rpc('match_players_for_quick_tournament');
-      return response;
-    });
+    // Create a new lobby or find an existing one
+    console.log("[TOURNAMENT] Calling match_players_for_quick_tournament function");
+    
+    // Use direct RPC call without timestamp parameter
+    const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
     
     if (error) {
-      console.error("[TOURNAMENT] Error searching for tournament:", error);
+      console.error("[TOURNAMENT] Error in match_players_for_quick_tournament:", error);
       throw new Error("Не удалось найти турнир. Пожалуйста, попробуйте снова.");
+    }
+    
+    if (!data) {
+      console.error("[TOURNAMENT] No lobby ID returned from match_players_for_quick_tournament");
+      throw new Error("Сервер не вернул ID лобби. Пожалуйста, попробуйте снова.");
     }
     
     // Add the user to the lobby

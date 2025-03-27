@@ -15,6 +15,7 @@ export const usePollingRefresh = (
     try {
       console.log(`[TOURNAMENT-UI] Refreshing data for lobby ${lobbyId}`);
       const status = await fetchLobbyStatus(lobbyId);
+      console.log(`[TOURNAMENT-UI] Lobby status: ${status.status}, players: ${status.current_players}/${status.max_players}`);
       dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
       
       const participants = await fetchLobbyParticipants(lobbyId);
@@ -28,9 +29,17 @@ export const usePollingRefresh = (
   // Periodically refresh lobby data even if subscriptions fail
   useEffect(() => {
     if (isSearching && lobbyId) {
+      // Initial fetch immediately
+      refreshLobbyData(lobbyId).catch(err => 
+        console.error("[TOURNAMENT-UI] Initial polling refresh error:", err)
+      );
+      
+      // Then set up interval for subsequent refreshes
       const refreshInterval = setInterval(() => {
-        refreshLobbyData(lobbyId);
-      }, 5000); // Every 5 seconds
+        refreshLobbyData(lobbyId).catch(err => 
+          console.error("[TOURNAMENT-UI] Interval polling refresh error:", err)
+        );
+      }, 3000); // Every 3 seconds instead of 5 for more responsiveness
       
       return () => {
         clearInterval(refreshInterval);

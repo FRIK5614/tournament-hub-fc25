@@ -20,15 +20,17 @@ export const useSearchSubscriptions = (
     try {
       // Create a unique channel name with a timestamp to avoid conflicts
       const timestamp = Date.now();
+      const clientId = Math.random().toString(36).substring(2, 10);
+      
       const lobbyChannel = supabase
-        .channel(`lobby_changes_${lobbyId}_${timestamp}`)
+        .channel(`lobby_changes_${lobbyId}_${timestamp}_${clientId}`)
         .on('postgres_changes', {
           event: '*', 
           schema: 'public',
           table: 'lobby_participants',
           filter: `lobby_id=eq.${lobbyId}`
-        }, () => {
-          console.log("[TOURNAMENT-UI] Lobby participants changed, refreshing data");
+        }, (payload) => {
+          console.log("[TOURNAMENT-UI] Lobby participants changed:", payload);
           onDataRefresh(lobbyId);
         })
         .subscribe((status) => {
@@ -36,13 +38,13 @@ export const useSearchSubscriptions = (
         });
         
       const lobbyStatusChannel = supabase
-        .channel(`lobby_status_changes_${lobbyId}_${timestamp}`)
+        .channel(`lobby_status_changes_${lobbyId}_${timestamp}_${clientId}`)
         .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'public',
           table: 'tournament_lobbies',
           filter: `id=eq.${lobbyId}`
-        }, (payload: any) => {
+        }, (payload) => {
           console.log("[TOURNAMENT-UI] Lobby status changed:", payload);
           onDataRefresh(lobbyId);
         })
@@ -72,6 +74,11 @@ export const useSearchSubscriptions = (
       
       // Setup new subscriptions
       cleanupSubscriptionRef.current = setupSubscriptions(lobbyId);
+      
+      // Additional safeguard: refresh data immediately to ensure we have initial data
+      onDataRefresh(lobbyId).catch(err => {
+        console.error("[TOURNAMENT-UI] Error in initial subscription data refresh:", err);
+      });
     }
     
     // Cleanup function
@@ -81,5 +88,5 @@ export const useSearchSubscriptions = (
         cleanupSubscriptionRef.current = null;
       }
     };
-  }, [isSearching, lobbyId, setupSubscriptions]);
+  }, [isSearching, lobbyId, setupSubscriptions, onDataRefresh]);
 };

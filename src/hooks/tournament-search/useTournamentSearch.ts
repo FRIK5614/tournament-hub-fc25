@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,7 +12,7 @@ import { useTournamentCreation } from './useTournamentCreation';
 import { useSearchSubscriptions } from './useSearchSubscriptions';
 
 export const useTournamentSearch = () => {
-  const [state, dispatch] = useState<TournamentSearchState>(initialState);
+  const [state, dispatch] = useReducer(tournamentSearchReducer, initialState);
   const navigate = useNavigate();
   const { toast } = useToast();
   const [cleanupFunction, setCleanupFunction] = useState<(() => void) | null>(null);
@@ -87,7 +87,7 @@ export const useTournamentSearch = () => {
     isUserReady
   } = useSearchActions(
     state, 
-    dispatch as React.Dispatch<TournamentSearchAction>, 
+    dispatch,
     setupCleanupFunction, 
     refreshLobbyData
   );
@@ -103,19 +103,19 @@ export const useTournamentSearch = () => {
     state.isSearching,
     state.lobbyId,
     refreshLobbyData,
-    dispatch as React.Dispatch<TournamentSearchAction>
+    dispatch
   );
   
   useReadyCheck(
     state, 
-    dispatch as React.Dispatch<TournamentSearchAction>, 
+    dispatch, 
     handleCancelSearch, 
     triggerTournamentCheck
   );
   
   const { checkTournamentCreation } = useTournamentCreation(
     state, 
-    dispatch as React.Dispatch<TournamentSearchAction>, 
+    dispatch, 
     handleCancelSearch
   );
 

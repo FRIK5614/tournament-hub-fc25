@@ -18,7 +18,11 @@ export const fetchLobbyStatus = async (lobbyId: string): Promise<LobbyStatus> =>
       throw error;
     }
     
-    return data;
+    // Приводим status к типу, определенному в LobbyStatus
+    return {
+      ...data,
+      status: data.status as LobbyStatus['status'] // Приведение типа строки к union типу
+    };
   } catch (error) {
     console.error("[TOURNAMENT-UI] Error in fetchLobbyStatus:", error);
     throw error;
@@ -50,12 +54,12 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       throw error;
     }
     
-    // Преобразуем данные в формат LobbyParticipant, добавляя lobby_id
+    // Преобразуем данные в формат LobbyParticipant, добавляя lobby_id и приводя status к нужному типу
     return data.map(participant => ({
       id: participant.id,
       user_id: participant.user_id,
-      lobby_id: lobbyId, // Добавляем lobby_id, которого не было в исходном запросе
-      status: participant.status,
+      lobby_id: lobbyId,
+      status: participant.status as LobbyParticipant['status'], // Приведение типа
       is_ready: participant.is_ready,
       profile: participant.profile || null
     }));

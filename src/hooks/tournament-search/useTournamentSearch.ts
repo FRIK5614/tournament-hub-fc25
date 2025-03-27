@@ -29,7 +29,7 @@ const initialState: TournamentSearchState = {
   isLoading: false,
   searchAttempts: 0,
   checkTournamentTrigger: false,
-  creationAttempts: 0  // Added this line to fix the missing property
+  creationAttempts: 0
 };
 
 export const useTournamentSearch = () => {
@@ -81,16 +81,30 @@ export const useTournamentSearch = () => {
     handleCancelSearch, 
     handleReadyCheck,
     isUserReady
-  } = useSearchActions(state, dispatch as React.Dispatch<TournamentSearchAction>, setupCleanupFunction, refreshLobbyData);
+  } = useSearchActions(
+    state, 
+    dispatch as unknown as React.Dispatch<TournamentSearchAction>, 
+    setupCleanupFunction, 
+    refreshLobbyData
+  );
   
-  useReadyCheck(state, dispatch as React.Dispatch<TournamentSearchAction>, handleCancelSearch, () => {
-    dispatch(prevState => ({
-      ...prevState,
-      checkTournamentTrigger: true
-    }));
-  });
+  useReadyCheck(
+    state, 
+    dispatch as unknown as React.Dispatch<TournamentSearchAction>, 
+    handleCancelSearch, 
+    () => {
+      dispatch(prevState => ({
+        ...prevState,
+        checkTournamentTrigger: true
+      }));
+    }
+  );
   
-  const { checkTournamentCreation } = useTournamentCreation(state, dispatch as React.Dispatch<TournamentSearchAction>, handleCancelSearch);
+  const { checkTournamentCreation } = useTournamentCreation(
+    state, 
+    dispatch as unknown as React.Dispatch<TournamentSearchAction>, 
+    handleCancelSearch
+  );
 
   return {
     ...state,

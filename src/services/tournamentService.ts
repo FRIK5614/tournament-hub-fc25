@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 export const searchForQuickTournament = async () => {
@@ -428,33 +427,39 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
       // Force update the lobby status to confirm we're creating a tournament
       const { error: statusUpdateError } = await supabase
         .from('tournament_lobbies')
-        .update({ status: 'creating_tournament' })
+        .update({ status: 'waiting' })
         .eq('id', lobbyId)
         .eq('status', 'ready_check')
         .is('tournament_id', null);
         
       if (statusUpdateError) {
-        console.error("[TOURNAMENT] Error updating lobby status to creating_tournament:", statusUpdateError);
+        console.error("[TOURNAMENT] Error updating lobby status before tournament creation:", statusUpdateError);
         return { allReady: true, tournamentId: null };
       }
       
       // Call the RPC function to create a tournament
-      const { data, error } = await supabase.rpc('create_matches_for_quick_tournament', {
-        lobby_id: lobbyId
-      });
-      
-      if (error) {
-        console.error("[TOURNAMENT] Error creating tournament:", error);
-        // If there was an error, revert the lobby status
-        await supabase
-          .from('tournament_lobbies')
-          .update({ status: 'ready_check' })
-          .eq('id', lobbyId);
-          
+      try {
+        console.log(`[TOURNAMENT] Calling create_matches_for_quick_tournament for lobby ${lobbyId}`);
+        const { data, error } = await supabase.rpc('create_matches_for_quick_tournament', {
+          lobby_id: lobbyId
+        });
+        
+        if (error) {
+          console.error("[TOURNAMENT] Error creating tournament:", error);
+          // If there was an error, revert the lobby status
+          await supabase
+            .from('tournament_lobbies')
+            .update({ status: 'ready_check' })
+            .eq('id', lobbyId);
+            
+          return { allReady: true, tournamentId: null };
+        }
+        
+        console.log(`[TOURNAMENT] Tournament creation response for lobby ${lobbyId}:`, data);
+      } catch (e) {
+        console.error("[TOURNAMENT] Exception in tournament creation RPC:", e);
         return { allReady: true, tournamentId: null };
       }
-      
-      console.log(`[TOURNAMENT] Tournament creation response for lobby ${lobbyId}:`, data);
       
       // Get the tournament ID that was created
       const { data: updatedLobby, error: updateError } = await supabase
@@ -472,12 +477,6 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
         console.error("[TOURNAMENT] Tournament ID not found after creation");
         return { allReady: true, tournamentId: null };
       }
-      
-      // Mark the lobby as active
-      await supabase
-        .from('tournament_lobbies')
-        .update({ status: 'active' })
-        .eq('id', lobbyId);
       
       console.log(`[TOURNAMENT] Tournament created successfully for lobby ${lobbyId}! ID: ${updatedLobby.tournament_id}`);
       return { allReady: true, tournamentId: updatedLobby.tournament_id };
@@ -648,7 +647,7 @@ export const confirmMatchResult = async (matchId: string, confirm: boolean) => {
     
     if (error) {
       console.error("Ошибка при отклонении результатов:", error);
-      throw new Error("Не удалось отклонить результаты. Пожалуйста, попробуйте снова.");
+      throw new Error("Не удалось отклонить ре��ультаты. Пожалуйста, попробуйте снова.");
     }
   }
   

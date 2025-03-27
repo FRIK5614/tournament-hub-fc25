@@ -1,10 +1,9 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { searchForQuickTournament, markUserAsReady, checkAllPlayersReady, leaveQuickTournament } from '@/services/tournamentService';
-import { Loader2, Users, Check, X } from 'lucide-react';
+import { Loader2, Users, Check, X, AlertTriangle } from 'lucide-react';
 
 const QuickTournamentSearch = () => {
   const [isSearching, setIsSearching] = useState(false);
@@ -21,7 +20,6 @@ const QuickTournamentSearch = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Fetch the current user's ID
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -34,7 +32,6 @@ const QuickTournamentSearch = () => {
     fetchUser();
   }, []);
 
-  // Check if tournament should be created
   const checkTournamentCreation = useCallback(async () => {
     if (!lobbyId || isCreatingTournament) return;
     
@@ -43,6 +40,8 @@ const QuickTournamentSearch = () => {
     try {
       setIsCreatingTournament(true);
       setTournamentCreationStatus('checking');
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       const result = await checkAllPlayersReady(lobbyId);
       
@@ -56,7 +55,6 @@ const QuickTournamentSearch = () => {
           variant: "default",
         });
         
-        // Navigate to the tournament
         setTimeout(() => {
           navigate(`/tournaments/${result.tournamentId}`);
         }, 1000);
@@ -69,18 +67,31 @@ const QuickTournamentSearch = () => {
           description: "Все игроки готовы, но не удалось создать турнир. Попробуйте снова.",
           variant: "destructive",
         });
+        
+        setTimeout(() => {
+          handleCancelSearch();
+        }, 5000);
       } else {
         setTournamentCreationStatus('waiting');
       }
     } catch (error) {
       console.error("[TOURNAMENT-UI] Error checking tournament creation:", error);
       setTournamentCreationStatus('error');
+      
+      toast({
+        title: "Ошибка",
+        description: "Произошла ошибка при создании турнира. Попробуйте снова.",
+        variant: "destructive",
+      });
+      
+      setTimeout(() => {
+        handleCancelSearch();
+      }, 5000);
     } finally {
       setIsCreatingTournament(false);
     }
-  }, [lobbyId, navigate, toast, isCreatingTournament]);
+  }, [lobbyId, navigate, toast, isCreatingTournament, handleCancelSearch]);
 
-  // Fetch lobby participants whenever the lobbyId changes
   useEffect(() => {
     if (!lobbyId) return;
 
@@ -88,7 +99,6 @@ const QuickTournamentSearch = () => {
       try {
         console.log(`[TOURNAMENT-UI] Fetching participants for lobby ${lobbyId}`);
         
-        // Fetch lobby data
         const { data: lobbyData, error: lobbyError } = await supabase
           .from('tournament_lobbies')
           .select('id, current_players, status, max_players, tournament_id')
@@ -102,7 +112,6 @@ const QuickTournamentSearch = () => {
         
         console.log(`[TOURNAMENT-UI] Lobby data: status=${lobbyData.status}, players=${lobbyData.current_players}/${lobbyData.max_players}, tournament=${lobbyData.tournament_id || 'none'}`);
         
-        // If we already have a tournament ID, navigate to it
         if (lobbyData.tournament_id) {
           console.log(`[TOURNAMENT-UI] Tournament ID found, navigating to: ${lobbyData.tournament_id}`);
           
@@ -112,14 +121,12 @@ const QuickTournamentSearch = () => {
             variant: "default",
           });
           
-          // Short delay to ensure all clients receive the update
           setTimeout(() => {
             navigate(`/tournaments/${lobbyData.tournament_id}`);
           }, 1000);
           return;
         }
         
-        // Fetch participants separately - only get ACTIVE participants with status 'searching' or 'ready'
         const { data: participants, error: participantsError } = await supabase
           .from('lobby_participants')
           .select('id, user_id, lobby_id, is_ready, status')
@@ -134,15 +141,10 @@ const QuickTournamentSearch = () => {
         const actualParticipants = participants || [];
         console.log(`[TOURNAMENT-UI] Found ${actualParticipants.length} active participants in lobby ${lobbyId}`);
         
-        // Enable ready check only when we have reached full player count (4) and status is ready_check
-        // We now explicitly check that we have EXACTLY 4 participants before allowing ready check
         const activePlayers = actualParticipants.length;
         const isReadyCheckActive = lobbyData.status === 'ready_check' && 
                                  activePlayers === lobbyData.max_players;
         
-        console.log(`[TOURNAMENT-UI] Ready check status: ${isReadyCheckActive}. Current status: ${lobbyData.status}, active players: ${activePlayers}, required: ${lobbyData.max_players}`);
-        
-        // Only enable ready check if we have EXACTLY 4 active players
         setReadyCheckActive(isReadyCheckActive);
         
         if (isReadyCheckActive && !readyCheckActive && activePlayers === 4) {
@@ -154,14 +156,12 @@ const QuickTournamentSearch = () => {
         }
         
         if (actualParticipants.length > 0) {
-          // Log detailed information about participants
           actualParticipants.forEach(p => {
             console.log(`[TOURNAMENT-UI] Participant in ${lobbyId}: userId=${p.user_id}, isReady=${p.is_ready}, status=${p.status}`);
           });
           
           const userIds = actualParticipants.map(p => p.user_id);
           
-          // Fetch profiles for all participants
           const { data: profiles, error: profilesError } = await supabase
             .from('profiles')
             .select('id, username, avatar_url')
@@ -171,7 +171,6 @@ const QuickTournamentSearch = () => {
             console.error("[TOURNAMENT-UI] Error fetching profiles:", profilesError);
           }
           
-          // Combine participants with their profiles
           const participantsWithProfiles = actualParticipants.map(participant => {
             const profile = profiles?.find(p => p.id === participant.user_id);
             return {
@@ -182,7 +181,6 @@ const QuickTournamentSearch = () => {
           
           setLobbyParticipants(participantsWithProfiles);
           
-          // Update ready players list (truly ready players)
           const readyPlayerIds = participantsWithProfiles
             .filter(p => p.is_ready && p.status === 'ready')
             .map(p => p.user_id) || [];
@@ -191,7 +189,6 @@ const QuickTournamentSearch = () => {
           console.log(`[TOURNAMENT-UI] Ready players: ${readyPlayerIds.length}/${participantsWithProfiles.length}`);
           console.log(`[TOURNAMENT-UI] Ready player IDs: `, readyPlayerIds);
           
-          // If all players are ready and we have exactly 4 participants, check for tournament
           if (readyPlayerIds.length === 4 && 
               participantsWithProfiles.length === 4 && 
               isReadyCheckActive && 
@@ -208,10 +205,8 @@ const QuickTournamentSearch = () => {
       }
     };
 
-    // Initial fetch
     fetchLobbyParticipants();
 
-    // Subscribe to changes in lobby participants
     const lobbyChannel = supabase
       .channel('lobby_changes')
       .on('postgres_changes', {
@@ -225,7 +220,6 @@ const QuickTournamentSearch = () => {
       })
       .subscribe();
       
-    // Subscribe to changes in lobby status
     const lobbyStatusChannel = supabase
       .channel('lobby_status_changes')
       .on('postgres_changes', {
@@ -240,10 +234,9 @@ const QuickTournamentSearch = () => {
         const currentPlayers = payload.new.current_players;
         const maxPlayers = payload.new.max_players;
         
-        // Update UI based on lobby status change
         if (newStatus === 'ready_check' && currentPlayers === maxPlayers) {
           setReadyCheckActive(true);
-          setCountdownSeconds(30); // Reset countdown for ready check
+          setCountdownSeconds(30);
           
           toast({
             title: "Игроки найдены!",
@@ -272,7 +265,6 @@ const QuickTournamentSearch = () => {
     };
   }, [lobbyId, navigate, toast, readyCheckActive, checkTournamentCreation, isCreatingTournament]);
 
-  // Retry search if needed
   useEffect(() => {
     if (isSearching && !lobbyId && searchAttempts > 0) {
       const retryTimer = setTimeout(() => {
@@ -283,7 +275,6 @@ const QuickTournamentSearch = () => {
     }
   }, [isSearching, lobbyId, searchAttempts]);
 
-  // Countdown timer for ready check
   useEffect(() => {
     if (!readyCheckActive || countdownSeconds <= 0) return;
     
@@ -294,7 +285,6 @@ const QuickTournamentSearch = () => {
     return () => clearTimeout(timer);
   }, [readyCheckActive, countdownSeconds]);
 
-  // Handle countdown expiration
   useEffect(() => {
     if (readyCheckActive && countdownSeconds === 0) {
       handleCancelSearch();
@@ -306,7 +296,6 @@ const QuickTournamentSearch = () => {
     }
   }, [countdownSeconds, readyCheckActive, toast]);
 
-  // Start searching for a tournament
   const handleStartSearch = async (isRetry = false) => {
     try {
       console.log(`[TOURNAMENT-UI] Starting tournament search${isRetry ? ' (retry)' : ''}`);
@@ -340,7 +329,6 @@ const QuickTournamentSearch = () => {
     }
   };
 
-  // Cancel the search
   const handleCancelSearch = async () => {
     if (!lobbyId) {
       setIsSearching(false);
@@ -360,6 +348,7 @@ const QuickTournamentSearch = () => {
       setLobbyId(null);
       setReadyCheckActive(false);
       setSearchAttempts(0);
+      setTournamentCreationStatus('');
       
       toast({
         title: "Поиск отменен",
@@ -371,7 +360,6 @@ const QuickTournamentSearch = () => {
     }
   };
 
-  // Mark user as ready
   const handleReadyCheck = async () => {
     if (!lobbyId || isLoading) return;
     
@@ -381,7 +369,6 @@ const QuickTournamentSearch = () => {
       const result = await markUserAsReady(lobbyId);
       console.log(`[TOURNAMENT-UI] Mark ready result:`, result);
       
-      // Add user to ready players list
       if (currentUserId) {
         setReadyPlayers(prev => {
           if (prev.includes(currentUserId)) return prev;
@@ -395,7 +382,6 @@ const QuickTournamentSearch = () => {
         variant: "default",
       });
       
-      // Check if this was the last player and we should create the tournament
       if (result.allReady && result.tournamentId) {
         console.log(`[TOURNAMENT-UI] All players ready after marking this user. Tournament ID: ${result.tournamentId}`);
         
@@ -410,7 +396,9 @@ const QuickTournamentSearch = () => {
         }, 1000);
       } else if (readyPlayers.length + 1 === 4 && !isCreatingTournament) {
         console.log(`[TOURNAMENT-UI] Potentially all players ready. Checking tournament creation...`);
-        checkTournamentCreation();
+        setTimeout(() => {
+          checkTournamentCreation();
+        }, 500);
       }
     } catch (error: any) {
       console.error("[TOURNAMENT-UI] Error marking as ready:", error);
@@ -424,13 +412,11 @@ const QuickTournamentSearch = () => {
     }
   };
 
-  // Check if current user is ready
   const isUserReady = () => {
     const ready = currentUserId ? readyPlayers.includes(currentUserId) : false;
     return ready;
   };
 
-  // Show tournament creation status if in progress
   const renderTournamentCreationStatus = () => {
     if (!tournamentCreationStatus || tournamentCreationStatus === 'waiting') return null;
     
@@ -450,8 +436,14 @@ const QuickTournamentSearch = () => {
         )}
         {tournamentCreationStatus === 'failed' && (
           <div className="text-red-500 flex items-center justify-center">
+            <AlertTriangle className="mr-2" size={16} />
+            Ошибка создания турнира. Отмена поиска...
+          </div>
+        )}
+        {tournamentCreationStatus === 'error' && (
+          <div className="text-red-500 flex items-center justify-center">
             <X className="mr-2" size={16} />
-            Ошибка создания турнира
+            Ошибка системы. Попробуйте снова.
           </div>
         )}
       </div>

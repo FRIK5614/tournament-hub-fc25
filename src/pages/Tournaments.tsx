@@ -1,205 +1,230 @@
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import TournamentCard from '@/components/TournamentCard';
-import { Search, Filter } from 'lucide-react';
+import QuickTournamentSearch from '@/components/tournaments/QuickTournamentSearch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Trophy, Calendar, Users, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { supabase } from "@/integrations/supabase/client";
 
-// Extended sample tournament data
-const tournamentData = [
-  {
-    id: 1,
-    title: 'Быстрый турнир #247',
-    image: '/tournament1.jpg',
-    date: 'Сейчас',
-    players: '2/4 игроков',
-    prize: '1000₽',
-    status: 'active' as const
-  },
-  {
-    id: 2,
-    title: 'Профессиональная лига FC25',
-    image: '/tournament2.jpg',
-    date: 'Через 2 часа',
-    players: '12/16 игроков',
-    prize: '10000₽',
-    status: 'upcoming' as const
-  },
-  {
-    id: 3,
-    title: 'Еженедельный кубок',
-    image: '/tournament3.jpg',
-    date: 'Сегодня, 21:00',
-    players: '8/8 игроков',
-    prize: '5000₽',
-    status: 'upcoming' as const
-  },
-  {
-    id: 4,
-    title: 'Турнир новичков',
-    image: '/tournament1.jpg',
-    date: 'Сейчас',
-    players: '3/4 игроков',
-    prize: '500₽',
-    status: 'active' as const
-  },
-  {
-    id: 5,
-    title: 'Кубок FC25 Masters',
-    image: '/tournament2.jpg',
-    date: 'Завтра, 19:00',
-    players: '6/32 игроков',
-    prize: '15000₽',
-    status: 'upcoming' as const
-  },
-  {
-    id: 6,
-    title: 'Турнир выходного дня',
-    image: '/tournament3.jpg',
-    date: 'Суббота, 12:00',
-    players: '0/8 игроков',
-    prize: '3000₽',
-    status: 'upcoming' as const
-  },
-  {
-    id: 7,
-    title: 'Ночная лига FC25',
-    image: '/tournament1.jpg',
-    date: 'Вчера',
-    players: '4/4 игроков',
-    prize: '2000₽',
-    status: 'finished' as const
-  },
-  {
-    id: 8,
-    title: 'Международный турнир',
-    image: '/tournament2.jpg',
-    date: '12.09.2023',
-    players: '32/32 игроков',
-    prize: '25000₽',
-    status: 'finished' as const
-  }
-];
+const Tournaments = () => {
+  const [activeTournaments, setActiveTournaments] = useState<any[]>([]);
+  const [completedTournaments, setCompletedTournaments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const navigate = useNavigate();
 
-const TournamentsPage = () => {
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'upcoming' | 'finished'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  
   useEffect(() => {
-    // Scroll to top when component mounts
-    window.scrollTo(0, 0);
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      setIsLoggedIn(!!data.session);
+    };
+    
+    const fetchTournaments = async () => {
+      try {
+        // Fetch active tournaments
+        const { data: active } = await supabase
+          .from('tournaments')
+          .select('*')
+          .eq('status', 'active')
+          .eq('tournament_format', 'quick')
+          .order('created_at', { ascending: false })
+          .limit(12);
+          
+        setActiveTournaments(active || []);
+        
+        // Fetch completed tournaments
+        const { data: completed } = await supabase
+          .from('tournaments')
+          .select('*')
+          .eq('status', 'completed')
+          .eq('tournament_format', 'quick')
+          .order('created_at', { ascending: false })
+          .limit(12);
+          
+        setCompletedTournaments(completed || []);
+        
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching tournaments:', error);
+        setLoading(false);
+      }
+    };
+    
+    checkAuth();
+    fetchTournaments();
   }, []);
-  
-  // Filter tournaments based on active filter and search query
-  const filteredTournaments = tournamentData.filter(tournament => {
-    const matchesFilter = 
-      activeFilter === 'all' || 
-      tournament.status === activeFilter;
-      
-    const matchesSearch = 
-      tournament.title.toLowerCase().includes(searchQuery.toLowerCase());
-      
-    return matchesFilter && matchesSearch;
-  });
+
+  const redirectToLogin = () => {
+    navigate('/login');
+  };
 
   return (
     <div className="min-h-screen bg-fc-background text-white">
       <Navbar />
       
-      {/* Page header */}
-      <div className="pt-24 pb-8 px-6 md:px-12">
+      <div className="pt-24 pb-16 px-6 md:px-12">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-bold">Турниры FC25</h1>
-          <p className="text-gray-400 mt-2">Найдите турнир и начните свой путь к победе</p>
-        </div>
-      </div>
-      
-      {/* Search and filters */}
-      <div className="px-6 md:px-12 pb-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="glass-card p-4 md:p-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              {/* Search bar */}
-              <div className="relative flex-grow">
-                <input
-                  type="text"
-                  placeholder="Поиск турниров..."
-                  className="w-full bg-fc-background border border-fc-muted rounded-lg py-2 px-4 pl-10 text-white focus:outline-none focus:border-fc-accent"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <Search size={18} className="text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-              </div>
-              
-              {/* Filters */}
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-gray-400 flex items-center">
-                  <Filter size={16} className="mr-1" />
-                  Фильтр:
-                </span>
-                <button
-                  className={`px-3 py-1 rounded-full transition-colors ${
-                    activeFilter === 'all' 
-                      ? 'bg-fc-accent text-fc-background' 
-                      : 'bg-fc-muted text-white hover:bg-fc-muted/80'
-                  }`}
-                  onClick={() => setActiveFilter('all')}
-                >
-                  Все
-                </button>
-                <button
-                  className={`px-3 py-1 rounded-full transition-colors ${
-                    activeFilter === 'active' 
-                      ? 'bg-fc-accent text-fc-background' 
-                      : 'bg-fc-muted text-white hover:bg-fc-muted/80'
-                  }`}
-                  onClick={() => setActiveFilter('active')}
-                >
-                  Активные
-                </button>
-                <button
-                  className={`px-3 py-1 rounded-full transition-colors ${
-                    activeFilter === 'upcoming' 
-                      ? 'bg-fc-accent text-fc-background' 
-                      : 'bg-fc-muted text-white hover:bg-fc-muted/80'
-                  }`}
-                  onClick={() => setActiveFilter('upcoming')}
-                >
-                  Предстоящие
-                </button>
-                <button
-                  className={`px-3 py-1 rounded-full transition-colors ${
-                    activeFilter === 'finished' 
-                      ? 'bg-fc-accent text-fc-background' 
-                      : 'bg-fc-muted text-white hover:bg-fc-muted/80'
-                  }`}
-                  onClick={() => setActiveFilter('finished')}
-                >
-                  Завершенные
-                </button>
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-3xl md:text-4xl font-bold">Турниры</h1>
+            
+            <Link 
+              to="/long-term-tournaments" 
+              className="btn-outline inline-flex items-center group"
+            >
+              Долгосрочные турниры
+              <ArrowRight size={18} className="ml-2 transition-transform group-hover:translate-x-1" />
+            </Link>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
+            <div className="lg:col-span-1">
+              {isLoggedIn ? (
+                <QuickTournamentSearch />
+              ) : (
+                <div className="glass-card p-6">
+                  <h3 className="text-xl font-semibold mb-4">Быстрый турнир</h3>
+                  
+                  <p className="text-gray-300 mb-6">
+                    Для участия в быстрых турнирах необходимо войти в аккаунт.
+                    Зарегистрируйтесь или войдите, чтобы начать играть.
+                  </p>
+                  
+                  <button 
+                    className="btn-primary w-full"
+                    onClick={redirectToLogin}
+                  >
+                    Войти / Зарегистрироваться
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <div className="lg:col-span-2">
+              <div className="glass-card p-6">
+                <h3 className="text-xl font-semibold mb-6">Как работают турниры</h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-fc-background/50 rounded-lg p-4">
+                    <h4 className="font-medium mb-2 flex items-center">
+                      <Trophy className="text-fc-accent mr-2" size={18} />
+                      Быстрые турниры
+                    </h4>
+                    <p className="text-sm text-gray-300">
+                      Быстрые турниры на 4 игрока, где каждый играет с каждым. 
+                      Победы повышают ваш рейтинг для участия в долгосрочных турнирах.
+                    </p>
+                  </div>
+                  
+                  <div className="bg-fc-background/50 rounded-lg p-4">
+                    <h4 className="font-medium mb-2 flex items-center">
+                      <Trophy className="text-blue-500 mr-2" size={18} />
+                      Долгосрочные турниры
+                    </h4>
+                    <p className="text-sm text-gray-300">
+                      Три уровня ежемесячных турниров: Лига конференций, Лига Европы и Лига чемпионов.
+                      Турниры с призовым фондом и жеребьевкой по правилам УЕФА.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-      
-      {/* Tournaments grid */}
-      <div className="px-6 md:px-12 pb-16">
-        <div className="max-w-7xl mx-auto">
-          {filteredTournaments.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-fade-in">
-              {filteredTournaments.map((tournament) => (
-                <TournamentCard key={tournament.id} {...tournament} />
-              ))}
-            </div>
-          ) : (
-            <div className="glass-card p-12 text-center animate-fade-in">
-              <h3 className="text-xl font-semibold mb-2">Турниры не найдены</h3>
-              <p className="text-gray-400">
-                По вашему запросу не найдено ни одного турнира. Попробуйте изменить параметры поиска.
-              </p>
-            </div>
-          )}
+          
+          <div className="mb-10">
+            <Tabs defaultValue="active">
+              <TabsList className="mb-6">
+                <TabsTrigger value="active">Активные турниры</TabsTrigger>
+                <TabsTrigger value="completed">Завершенные турниры</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="active">
+                {loading ? (
+                  <div className="text-center py-12">
+                    <span className="text-gray-400">Загрузка турниров...</span>
+                  </div>
+                ) : activeTournaments.length === 0 ? (
+                  <div className="text-center py-12">
+                    <span className="text-gray-400">Сейчас нет активных турниров.</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {activeTournaments.map((tournament) => (
+                      <Link 
+                        key={tournament.id} 
+                        to={`/tournaments/${tournament.id}`}
+                        className="glass-card p-5 card-hover"
+                      >
+                        <h3 className="text-white text-lg font-semibold mb-3">{tournament.title}</h3>
+                        
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center text-gray-400">
+                            <Calendar size={16} className="mr-2" />
+                            <span>{new Date(tournament.created_at).toLocaleDateString()}</span>
+                          </div>
+                          
+                          <div className="flex items-center text-gray-400">
+                            <Users size={16} className="mr-2" />
+                            <span>{tournament.current_participants}/{tournament.max_participants} игроков</span>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-4">
+                          <div className="w-full py-2 rounded-md text-center bg-fc-accent text-fc-background font-medium">
+                            Просмотр
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="completed">
+                {loading ? (
+                  <div className="text-center py-12">
+                    <span className="text-gray-400">Загрузка турниров...</span>
+                  </div>
+                ) : completedTournaments.length === 0 ? (
+                  <div className="text-center py-12">
+                    <span className="text-gray-400">Нет завершенных турниров.</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {completedTournaments.map((tournament) => (
+                      <Link 
+                        key={tournament.id} 
+                        to={`/tournaments/${tournament.id}`}
+                        className="glass-card p-5 card-hover opacity-80 hover:opacity-100"
+                      >
+                        <h3 className="text-white text-lg font-semibold mb-3">{tournament.title}</h3>
+                        
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center text-gray-400">
+                            <Calendar size={16} className="mr-2" />
+                            <span>{new Date(tournament.created_at).toLocaleDateString()}</span>
+                          </div>
+                          
+                          <div className="flex items-center text-gray-400">
+                            <Users size={16} className="mr-2" />
+                            <span>{tournament.current_participants}/{tournament.max_participants} игроков</span>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-4">
+                          <div className="w-full py-2 rounded-md text-center bg-gray-700 text-white font-medium">
+                            Результаты
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
         </div>
       </div>
       
@@ -208,4 +233,4 @@ const TournamentsPage = () => {
   );
 };
 
-export default TournamentsPage;
+export default Tournaments;

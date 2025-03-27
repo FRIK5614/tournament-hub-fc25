@@ -48,6 +48,56 @@ export type Database = {
           },
         ]
       }
+      fc25hub: {
+        Row: {
+          created_at: string
+          id: number
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+        }
+        Update: {
+          created_at?: string
+          id?: number
+        }
+        Relationships: []
+      }
+      lobby_participants: {
+        Row: {
+          created_at: string
+          id: string
+          is_ready: boolean | null
+          lobby_id: string
+          status: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_ready?: boolean | null
+          lobby_id: string
+          status?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_ready?: boolean | null
+          lobby_id?: string
+          status?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lobby_participants_lobby_id_fkey"
+            columns: ["lobby_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_lobbies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       matches: {
         Row: {
           completed_time: string | null
@@ -58,6 +108,7 @@ export type Database = {
           player2_id: string
           player2_score: number | null
           result_confirmed: boolean | null
+          result_confirmed_by_player2: boolean | null
           result_image_url: string | null
           scheduled_time: string | null
           status: string
@@ -74,6 +125,7 @@ export type Database = {
           player2_id: string
           player2_score?: number | null
           result_confirmed?: boolean | null
+          result_confirmed_by_player2?: boolean | null
           result_image_url?: string | null
           scheduled_time?: string | null
           status: string
@@ -90,6 +142,7 @@ export type Database = {
           player2_id?: string
           player2_score?: number | null
           result_confirmed?: boolean | null
+          result_confirmed_by_player2?: boolean | null
           result_image_url?: string | null
           scheduled_time?: string | null
           status?: string
@@ -187,6 +240,50 @@ export type Database = {
         }
         Relationships: []
       }
+      tournament_lobbies: {
+        Row: {
+          created_at: string
+          current_players: number
+          id: string
+          match_time_limit: number | null
+          max_players: number
+          ready_check_started_at: string | null
+          started_at: string | null
+          status: string
+          tournament_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          current_players?: number
+          id?: string
+          match_time_limit?: number | null
+          max_players?: number
+          ready_check_started_at?: string | null
+          started_at?: string | null
+          status?: string
+          tournament_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          current_players?: number
+          id?: string
+          match_time_limit?: number | null
+          max_players?: number
+          ready_check_started_at?: string | null
+          started_at?: string | null
+          status?: string
+          tournament_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_lobbies_tournament_id_fkey"
+            columns: ["tournament_id"]
+            isOneToOne: false
+            referencedRelation: "tournaments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tournament_participants: {
         Row: {
           created_at: string
@@ -235,12 +332,15 @@ export type Database = {
           description: string | null
           end_date: string | null
           id: string
+          lobby_id: string | null
           max_participants: number
           min_rating: number | null
           prize_pool: string | null
+          qualification_rating: number | null
           start_date: string | null
           status: string
           title: string
+          tournament_format: string
           type: string
           updated_at: string
         }
@@ -250,12 +350,15 @@ export type Database = {
           description?: string | null
           end_date?: string | null
           id?: string
+          lobby_id?: string | null
           max_participants: number
           min_rating?: number | null
           prize_pool?: string | null
+          qualification_rating?: number | null
           start_date?: string | null
           status: string
           title: string
+          tournament_format?: string
           type: string
           updated_at?: string
         }
@@ -265,12 +368,15 @@ export type Database = {
           description?: string | null
           end_date?: string | null
           id?: string
+          lobby_id?: string | null
           max_participants?: number
           min_rating?: number | null
           prize_pool?: string | null
+          qualification_rating?: number | null
           start_date?: string | null
           status?: string
           title?: string
+          tournament_format?: string
           type?: string
           updated_at?: string
         }
@@ -281,7 +387,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_matches_for_quick_tournament: {
+        Args: {
+          lobby_id: string
+        }
+        Returns: undefined
+      }
+      match_players_for_quick_tournament: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

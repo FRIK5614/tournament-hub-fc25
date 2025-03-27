@@ -9,18 +9,56 @@ export const RETRY_DELAY = 1000;
 // Helper function to delay execution
 export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper interface for retry options
+export interface RetryOptions {
+  maxRetries?: number;
+  baseDelay?: number;
+  jitter?: boolean;
+  onRetry?: (error: any, retryCount: number) => void;
+}
+
 // Helper function to retry a function with exponential backoff
-export async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delayMs = RETRY_DELAY): Promise<T> {
-  try {
-    return await fn();
-  } catch (error) {
-    console.error(`[TOURNAMENT] Operation failed, retries left: ${retries}`, error);
-    if (retries > 0) {
-      await delay(delayMs);
-      return withRetry(fn, retries - 1, delayMs * 1.5);
+export function withRetry<T, Args extends any[]>(
+  fn: (...args: Args) => Promise<T>, 
+  options?: RetryOptions | number
+): (...args: Args) => Promise<T> {
+  // Handle backwards compatibility where second param was just maxRetries number
+  const opts: RetryOptions = typeof options === 'number' 
+    ? { maxRetries: options } 
+    : options || {};
+    
+  const {
+    maxRetries = MAX_RETRIES,
+    baseDelay = RETRY_DELAY,
+    jitter = true,
+    onRetry = () => {}
+  } = opts;
+
+  return async (...args: Args): Promise<T> => {
+    let lastError: any;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn(...args);
+      } catch (error) {
+        console.error(`[TOURNAMENT] Operation failed, retries left: ${maxRetries - attempt}`, error);
+        lastError = error;
+        
+        if (attempt < maxRetries) {
+          // Calculate delay with optional jitter
+          const currentDelay = baseDelay * Math.pow(1.5, attempt);
+          const actualDelay = jitter 
+            ? currentDelay * (0.8 + Math.random() * 0.4) // Add 20% jitter
+            : currentDelay;
+            
+          onRetry(error, attempt + 1);
+          await delay(actualDelay);
+        }
+      }
     }
-    throw error;
-  }
+    
+    throw lastError;
+  };
 }
 
 // Update the lobby's current_players count and manage lobby status

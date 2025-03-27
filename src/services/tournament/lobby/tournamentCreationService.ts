@@ -1,6 +1,6 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { withRetry, delay } from "../utils";
+import { withRetry, delay, RetryOptions } from "../utils";
 
 /**
  * Create a tournament for a lobby by calling the RPC function with improved error handling
@@ -137,11 +137,15 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
   }
 };
 
-export const createTournamentWithRetry = withRetry(createTournamentViaRPC, {
+// Define retry options
+const retryOptions: RetryOptions = {
   maxRetries: 3,
   baseDelay: 1000,
   jitter: true,
   onRetry: (error, retryCount) => {
     console.warn(`[TOURNAMENT] Retry attempt ${retryCount}:`, error);
   }
-});
+};
+
+// Create a proper wrapped function that correctly handles the arguments
+export const createTournamentWithRetry = withRetry(createTournamentViaRPC, retryOptions);

@@ -229,6 +229,9 @@ export const useTournamentCreation = (
       
       try {
         console.log("[TOURNAMENT-UI] Creating tournament for lobby:", state.lobbyId);
+        
+        // Fix: Call the createTournamentWithRetry function correctly with the lobbyId
+        // Fixed error: Result is returned directly from the withRetry function, not called as a function
         const result = await createTournamentWithRetry(state.lobbyId);
         
         if (result.created) {

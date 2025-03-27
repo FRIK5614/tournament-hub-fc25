@@ -6,6 +6,7 @@ export * from './lobby/index';
 // Re-export from tournamentService with explicit names to avoid conflicts
 export {
   getTournamentStandings,
+  getPlayerMatches,
   registerForLongTermTournament,
   getLongTermTournaments,
   cleanupDuplicateTournaments,

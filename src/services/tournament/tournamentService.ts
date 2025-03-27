@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 export const getTournamentStandings = async (tournamentId: string) => {
@@ -27,12 +26,38 @@ export const getTournamentStandings = async (tournamentId: string) => {
   }
 };
 
-// Исправим проблему с множественным созданием турниров
+export const getPlayerMatches = async (tournamentId: string, playerId: string) => {
+  try {
+    console.log(`[TOURNAMENT-SERVICE] Getting matches for player ${playerId} in tournament ${tournamentId}`);
+    
+    const { data, error } = await supabase
+      .from('matches')
+      .select(`
+        *,
+        player1:player1_id(id, username, avatar_url, rating),
+        player2:player2_id(id, username, avatar_url, rating)
+      `)
+      .eq('tournament_id', tournamentId)
+      .or(`player1_id.eq.${playerId},player2_id.eq.${playerId}`)
+      .order('created_at', { ascending: true });
+    
+    if (error) {
+      console.error(`[TOURNAMENT-SERVICE] Error fetching player matches:`, error);
+      throw error;
+    }
+    
+    console.log(`[TOURNAMENT-SERVICE] Successfully loaded ${data?.length || 0} matches for player`);
+    return data || [];
+  } catch (error: any) {
+    console.error(`[TOURNAMENT-SERVICE] Error in getPlayerMatches:`, error);
+    throw new Error(`Не удалось получить матчи игрока: ${error.message}`);
+  }
+};
+
 export const cleanupDuplicateTournaments = async () => {
   try {
     console.log(`[TOURNAMENT-SERVICE] Cleaning up duplicate tournaments`);
     
-    // Получаем список лобби с несколькими турнирами
     const { data, error } = await supabase
       .from('tournament_lobbies')
       .select('id, tournament_id, created_at');
@@ -42,7 +67,6 @@ export const cleanupDuplicateTournaments = async () => {
       throw error;
     }
     
-    // Группировка лобби по ID для поиска дубликатов
     const lobbiesMap = data.reduce((acc, lobby) => {
       if (!acc[lobby.id]) {
         acc[lobby.id] = [];
@@ -53,13 +77,11 @@ export const cleanupDuplicateTournaments = async () => {
       return acc;
     }, {} as Record<string, string[]>);
     
-    // Для каждого лобби с более чем одним турниром, оставляем только самый старый
     let cleanupCount = 0;
     for (const [lobbyId, tournamentIds] of Object.entries(lobbiesMap)) {
       if (tournamentIds.length > 1) {
         console.log(`[TOURNAMENT-SERVICE] Lobby ${lobbyId} has ${tournamentIds.length} tournaments, cleaning up...`);
         
-        // Получаем информацию о всех турнирах для этого лобби
         const { data: tournaments } = await supabase
           .from('tournaments')
           .select('id, created_at')
@@ -67,12 +89,10 @@ export const cleanupDuplicateTournaments = async () => {
           .order('created_at', { ascending: true });
           
         if (tournaments && tournaments.length > 1) {
-          // Оставляем самый первый турнир, остальные помечаем как завершенные
           const [keepTournamentId, ...duplicateTournamentIds] = tournaments.map(t => t.id);
           
           console.log(`[TOURNAMENT-SERVICE] Keeping tournament ${keepTournamentId}, marking ${duplicateTournamentIds.length} as completed`);
           
-          // Помечаем дубликаты как завершенные
           for (const duplicateId of duplicateTournamentIds) {
             await supabase
               .from('tournaments')
@@ -86,7 +106,6 @@ export const cleanupDuplicateTournaments = async () => {
             cleanupCount++;
           }
           
-          // Обновляем лобби, чтобы оно указывало только на основной турнир
           await supabase
             .from('tournament_lobbies')
             .update({ tournament_id: keepTournamentId })
@@ -103,10 +122,8 @@ export const cleanupDuplicateTournaments = async () => {
   }
 };
 
-// Для анализа причин создания множества турниров
 export const analyzeTournamentCreation = async () => {
   try {
-    // Анализируем создание турниров по времени для выявления паттернов
     const { data, error } = await supabase
       .from('tournaments')
       .select('id, created_at, lobby_id, status')
@@ -117,7 +134,6 @@ export const analyzeTournamentCreation = async () => {
       throw error;
     }
     
-    // Группируем по лобби
     const byLobby = data.reduce((acc, tournament) => {
       if (tournament.lobby_id) {
         if (!acc[tournament.lobby_id]) {
@@ -128,24 +144,21 @@ export const analyzeTournamentCreation = async () => {
       return acc;
     }, {} as Record<string, any[]>);
     
-    // Анализируем паттерны времени создания
     const duplicationPatterns: Record<string, any> = {};
     let totalDuplicates = 0;
     
     for (const [lobbyId, tournaments] of Object.entries(byLobby)) {
       if (tournaments.length > 1) {
-        // Сортируем по времени создания
         tournaments.sort((a, b) => 
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
         
-        // Вычисляем временные интервалы между созданиями
         const intervals = [];
         for (let i = 1; i < tournaments.length; i++) {
           const interval = (
             new Date(tournaments[i].created_at).getTime() - 
             new Date(tournaments[i-1].created_at).getTime()
-          ) / 1000; // в секундах
+          ) / 1000;
           intervals.push(interval);
         }
         
@@ -193,7 +206,6 @@ export const registerForLongTermTournament = async (tournamentId: string) => {
     throw new Error("Необходимо авторизоваться для регистрации на турнир");
   }
   
-  // Check if user meets qualification rating
   const { data: tournament, error: tournamentError } = await supabase
     .from('tournaments')
     .select('*')
@@ -220,7 +232,6 @@ export const registerForLongTermTournament = async (tournamentId: string) => {
     }
   }
   
-  // Register user for tournament
   const { error } = await supabase
     .from('tournament_participants')
     .insert({
@@ -234,7 +245,6 @@ export const registerForLongTermTournament = async (tournamentId: string) => {
     throw new Error("Не удалось зарегистрироваться на турнир. Возможно, вы уже зарегистрированы.");
   }
   
-  // Increment current participants count
   const { error: updateError } = await supabase
     .from('tournaments')
     .update({

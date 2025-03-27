@@ -10,9 +10,10 @@ interface MatchCardProps {
   match: Match;
   showActions?: boolean;
   isCompact?: boolean;
+  userId?: string | null; // Make userId optional
 }
 
-const MatchCard: React.FC<MatchCardProps> = ({ match, showActions = true, isCompact = false }) => {
+const MatchCard: React.FC<MatchCardProps> = ({ match, showActions = true, isCompact = false, userId }) => {
   const navigate = useNavigate();
   
   const formatScore = (score: number | undefined) => {

@@ -31,7 +31,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       }
 
       if (state.lobbyId) {
-        // Fixed: Using the correct parameter format for leaveQuickTournament
+        // Fixed: Using the correct parameter for leaveQuickTournament
         await leaveQuickTournament(state.lobbyId);
       }
       dispatch({ type: 'RESET_SEARCH' });
@@ -61,7 +61,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         throw new Error("Пользователь не авторизован");
       }
 
-      // Fixed: Using the correct parameter format for markUserAsReady
+      // Fixed: Using the correct parameter for markUserAsReady
       await markUserAsReady(state.lobbyId || '');
       dispatch({ type: 'ADD_READY_PLAYER', payload: user.user.id });
       
@@ -86,6 +86,9 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     return state.readyPlayers.includes(state.currentUserId || '');
   }, [state.readyPlayers, state.currentUserId]);
 
+  // The cleanup subscription reference for lobby updates
+  let cleanupSubscriptionRef: (() => void) | null = null;
+
   const handleStartSearch = useCallback(async (isRetry: boolean = false): Promise<void> => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SEARCH_ATTEMPTS', payload: isRetry ? state.searchAttempts + 1 : 0 });
@@ -109,8 +112,12 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       const initialParticipants = await fetchLobbyParticipants(lobbyId);
       dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: initialParticipants });
 
-      // Setup real-time subscriptions
-      const cleanupSubscription = setupLobbySubscriptions(lobbyId, () => {
+      // Setup real-time subscriptions - store the cleanup function but don't return it
+      if (cleanupSubscriptionRef) {
+        cleanupSubscriptionRef(); // Clean up existing subscription if any
+      }
+      
+      cleanupSubscriptionRef = setupLobbySubscriptions(lobbyId, () => {
         fetchLobbyStatus(lobbyId).then(status => {
           dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
           fetchLobbyParticipants(lobbyId).then(participants => {
@@ -122,8 +129,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       dispatch({ type: 'SET_SEARCHING', payload: true });
       dispatch({ type: 'SET_LOADING', payload: false });
       
-      // Store the cleanup function to be called when we cancel search
-      return cleanupSubscription;
+      // No return value needed, function completes here
     } catch (error: any) {
       console.error("Ошибка при поиске лобби:", error);
       toast({
@@ -132,10 +138,17 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         variant: "destructive",
       });
       dispatch({ type: 'SET_LOADING', payload: false });
-      // Return void to match the expected type
-      return;
     }
-  }, [toast]);
+  }, [toast, state.searchAttempts]);
+
+  // Effect to handle cleanup when component unmounts
+  useEffect(() => {
+    return () => {
+      if (cleanupSubscriptionRef) {
+        cleanupSubscriptionRef();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (state.countdownSeconds === 0 && state.readyCheckActive) {

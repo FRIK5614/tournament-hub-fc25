@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 /**
@@ -16,6 +15,13 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     if (existingLobby?.tournament_id) {
       console.log(`[TOURNAMENT] Tournament already exists: ${existingLobby.tournament_id}`);
       return { tournamentId: existingLobby.tournament_id, created: false };
+    }
+    
+    // Verify authentication before creating tournament
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      console.error("[TOURNAMENT] Authentication error:", authError);
+      throw new Error("Убедитесь, что вы авторизованы для создания турнира");
     }
     
     // Try to create tournament
@@ -62,6 +68,13 @@ export const createTournamentManually = async (lobbyId: string) => {
     if (existingLobby?.tournament_id) {
       console.log(`[TOURNAMENT] Tournament already exists: ${existingLobby.tournament_id}`);
       return { tournamentId: existingLobby.tournament_id, created: false };
+    }
+    
+    // Verify authentication before creating tournament
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      console.error("[TOURNAMENT] Authentication error:", authError);
+      throw new Error("Убедитесь, что вы авторизованы для создания турнира");
     }
     
     // Get participants for this lobby
@@ -118,21 +131,6 @@ export const createTournamentManually = async (lobbyId: string) => {
           status: 'active',
           points: 0
         });
-    }
-    
-    // Create matches (round-robin)
-    const playerIds = participants.map(p => p.user_id);
-    for (let i = 0; i < playerIds.length; i++) {
-      for (let j = i + 1; j < playerIds.length; j++) {
-        await supabase
-          .from('matches')
-          .insert({
-            tournament_id: tournamentId,
-            player1_id: playerIds[i],
-            player2_id: playerIds[j],
-            status: 'scheduled'
-          });
-      }
     }
     
     return { tournamentId, created: true };

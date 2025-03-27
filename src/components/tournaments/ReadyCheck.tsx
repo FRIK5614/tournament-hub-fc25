@@ -42,6 +42,13 @@ const ReadyCheck = ({
   // Check if countdown has expired
   const isCountdownExpired = countdownSeconds <= 0;
 
+  // Format seconds to MM:SS
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
+  };
+
   // Render tournament creation status
   const renderTournamentCreationStatus = () => {
     if (isCountdownExpired || allPlayersReady) {
@@ -112,7 +119,7 @@ const ReadyCheck = ({
       {!isCountdownExpired && (
         <div className="flex justify-center mb-4">
           <Badge variant="outline" className="bg-yellow-500/20 border-yellow-500 px-3 py-1 rounded-full text-sm">
-            {countdownSeconds} сек.
+            {formatTime(countdownSeconds)}
           </Badge>
         </div>
       )}
@@ -129,7 +136,7 @@ const ReadyCheck = ({
                   : 'border-gray-500'
             }`}
           >
-            <span>{participant.profile?.username || 'Игрок'}</span>
+            <span>{participant.profile?.username || `Игрок-${participant.user_id.substring(0, 6)}`}</span>
             {isPlayerReady(participant) ? (
               <div className="flex items-center">
                 <span className="text-green-500 mr-1 text-xs">Готов</span>

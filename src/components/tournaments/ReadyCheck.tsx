@@ -35,8 +35,23 @@ const ReadyCheck = ({
     return participant.status === 'ready';
   };
 
+  // Check if all players are ready
+  const allPlayersReady = lobbyParticipants.length > 0 && 
+    lobbyParticipants.every(p => isPlayerReady(p));
+
   // Render tournament creation status
   const renderTournamentCreationStatus = () => {
+    if (allPlayersReady && (!tournamentCreationStatus || tournamentCreationStatus === 'waiting')) {
+      return (
+        <div className="my-2 text-center">
+          <div className="text-yellow-500 flex items-center justify-center">
+            <Loader2 className="mr-2 animate-spin" size={16} />
+            Создание турнира...
+          </div>
+        </div>
+      );
+    }
+    
     if (!tournamentCreationStatus || tournamentCreationStatus === 'waiting') return null;
     
     return (
@@ -151,7 +166,7 @@ const ReadyCheck = ({
           variant="outline"
           className="bg-red-500/20 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
           onClick={onCancel}
-          disabled={isLoading}
+          disabled={isLoading || tournamentCreationStatus === 'created'}
         >
           {isLoading ? (
             <Loader2 size={18} className="animate-spin mr-2" />

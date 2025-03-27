@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { checkAllPlayersReady } from '@/services/tournament';
 import { TournamentSearchState } from './types';
 import { TournamentSearchAction } from './reducer';
+import { supabase } from "@/integrations/supabase/client";
 
 export function useTournamentCreation(
   state: TournamentSearchState,
@@ -40,6 +41,35 @@ export function useTournamentCreation(
     }
   }, [state.tournamentId, navigate, toast]);
   
+  // Setup direct subscription to tournament_id changes on the lobby
+  useEffect(() => {
+    if (!state.lobbyId) return;
+    
+    const channel = supabase
+      .channel(`lobby_tournament_created_${state.lobbyId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tournament_lobbies',
+          filter: `id=eq.${state.lobbyId}`,
+        },
+        (payload) => {
+          console.log('[TOURNAMENT-UI] Lobby updated:', payload);
+          if (payload.new?.tournament_id && !state.tournamentId) {
+            console.log(`[TOURNAMENT-UI] Tournament created: ${payload.new.tournament_id}`);
+            dispatch({ type: 'SET_TOURNAMENT_ID', payload: payload.new.tournament_id });
+          }
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [state.lobbyId, state.tournamentId, dispatch]);
+  
   const checkTournamentCreation = useCallback(async () => {
     const { lobbyId, isCreatingTournament, creationAttempts, tournamentId } = state;
     
@@ -50,6 +80,21 @@ export function useTournamentCreation(
     try {
       dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: true });
       dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'checking' });
+      
+      // First check if tournament already exists for this lobby
+      const { data: existingLobby, error: existingError } = await supabase
+        .from('tournament_lobbies')
+        .select('tournament_id')
+        .eq('id', lobbyId)
+        .single();
+        
+      if (existingLobby?.tournament_id) {
+        console.log(`[TOURNAMENT-UI] Found existing tournament ${existingLobby.tournament_id}`);
+        dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
+        dispatch({ type: 'SET_TOURNAMENT_ID', payload: existingLobby.tournament_id });
+        dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
+        return;
+      }
       
       await new Promise(resolve => setTimeout(resolve, 1000));
       
@@ -63,7 +108,7 @@ export function useTournamentCreation(
         console.log(`[TOURNAMENT-UI] All players are ready but tournament creation failed`);
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'failed' });
         
-        if (creationAttempts >= 3) {
+        if (creationAttempts >= 5) {  // Increase max attempts
           toast({
             title: "Ошибка создания турнира",
             description: "Не удалось создать турнир после нескольких попыток. Поиск отменен.",
@@ -81,11 +126,12 @@ export function useTournamentCreation(
             variant: "default",
           });
           
+          // Longer retry delay
           setTimeout(() => {
             dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
             dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'waiting' });
             dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
-          }, 2000);
+          }, 3000);
         }
       } else {
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'waiting' });

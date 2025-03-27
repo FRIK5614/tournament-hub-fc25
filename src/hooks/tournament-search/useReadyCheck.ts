@@ -61,6 +61,36 @@ export const useReadyCheck = (
     }
   }, [state.readyCheckActive, state.lobbyId, state.currentUserId]);
 
+  // Check if all players are ready periodically
+  useEffect(() => {
+    if (state.readyCheckActive && state.lobbyId && state.lobbyParticipants.length === 4) {
+      const checkAllReady = async () => {
+        const allReady = state.lobbyParticipants.every(p => 
+          state.readyPlayers.includes(p.user_id)
+        );
+        
+        if (allReady && !state.isCreatingTournament && !state.tournamentId) {
+          console.log("[TOURNAMENT-UI] All players are ready, triggering tournament creation");
+          dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
+        }
+      };
+      
+      // Check immediately and then every second
+      checkAllReady();
+      const intervalId = setInterval(checkAllReady, 1000);
+      
+      return () => clearInterval(intervalId);
+    }
+  }, [
+    state.readyCheckActive, 
+    state.lobbyId, 
+    state.lobbyParticipants, 
+    state.readyPlayers, 
+    state.isCreatingTournament,
+    state.tournamentId,
+    dispatch
+  ]);
+
   // Handle countdown completion
   useEffect(() => {
     if (state.countdownSeconds === 0 && state.readyCheckActive) {

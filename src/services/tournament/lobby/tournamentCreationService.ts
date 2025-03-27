@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 
 /**
@@ -34,6 +35,27 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     }
     
     console.log(`[TOURNAMENT] Attempting to create tournament via RPC as user ${authData.user.id}`);
+    
+    // Before creating, double-check the ready status of all participants
+    const { data: participants, error: participantsCheckError } = await supabase
+      .from('lobby_participants')
+      .select('user_id, is_ready, status')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['ready', 'searching']);
+      
+    if (participantsCheckError) {
+      console.error("[TOURNAMENT] Error checking participants:", participantsCheckError);
+      throw participantsCheckError;
+    }
+    
+    if (!participants || participants.length < 4) {
+      throw new Error(`Недостаточно участников для создания турнира: ${participants?.length || 0}/4`);
+    }
+    
+    const readyCount = participants.filter(p => p.is_ready).length;
+    if (readyCount < 4) {
+      throw new Error(`Не все игроки подтвердили готовность: ${readyCount}/4`);
+    }
     
     // Try to create tournament
     const { data: rpcData, error: rpcError } = await supabase.rpc('create_matches_for_quick_tournament', {
@@ -105,20 +127,29 @@ export const createTournamentManually = async (lobbyId: string) => {
     
     console.log(`[TOURNAMENT] Creating tournament manually as user ${authData.user.id}`);
     
-    // Get participants for this lobby
-    const { data: participants, error: participantsError } = await supabase
+    // Before creating, double-check the ready status of all participants
+    const { data: participants, error: participantsCheckError } = await supabase
       .from('lobby_participants')
-      .select('user_id, profile:profiles(id, username, avatar_url)')
+      .select('user_id, is_ready, status, profile:profiles(id, username, avatar_url)')
       .eq('lobby_id', lobbyId)
-      .in('status', ['ready', 'searching']);
+      .in('status', ['ready']);
       
-    if (participantsError) {
-      console.error("[TOURNAMENT] Error fetching participants:", participantsError);
-      throw participantsError;
+    if (participantsCheckError) {
+      console.error("[TOURNAMENT] Error checking participants:", participantsCheckError);
+      throw participantsCheckError;
     }
-      
+    
     if (!participants || participants.length < 4) {
       throw new Error(`Недостаточно участников для создания турнира: ${participants?.length || 0}/4`);
+    }
+    
+    const readyCount = participants.filter(p => p.is_ready).length;
+    if (readyCount < 4) {
+      console.error(`[TOURNAMENT] Not all players are ready: ${readyCount}/4`);
+      participants.forEach(p => {
+        console.log(`Player ${p.user_id} - ready: ${p.is_ready}, status: ${p.status}`);
+      });
+      throw new Error(`Не все игроки подтвердили готовность: ${readyCount}/4`);
     }
     
     console.log(`[TOURNAMENT] Creating tournament with ${participants.length} participants`);
@@ -181,6 +212,24 @@ export const createTournamentManually = async (lobbyId: string) => {
       }
     }
     
+    // Create matches for all participants
+    for (let i = 0; i < participants.length; i++) {
+      for (let j = i + 1; j < participants.length; j++) {
+        const { error: matchError } = await supabase
+          .from('matches')
+          .insert({
+            tournament_id: tournamentId,
+            player1_id: participants[i].user_id,
+            player2_id: participants[j].user_id,
+            status: 'scheduled'
+          });
+          
+        if (matchError) {
+          console.error(`[TOURNAMENT] Error creating match between ${participants[i].user_id} and ${participants[j].user_id}:`, matchError);
+        }
+      }
+    }
+    
     return { tournamentId, created: true };
   } catch (error) {
     console.error("[TOURNAMENT] Error in createTournamentManually:", error);
@@ -217,9 +266,9 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
     // Сначала проверим, все ли игроки действительно готовы
     const { data: participants, error: participantsError } = await supabase
       .from('lobby_participants')
-      .select('user_id, is_ready')
+      .select('user_id, is_ready, status')
       .eq('lobby_id', lobbyId)
-      .in('status', ['ready', 'searching']);
+      .in('status', ['ready']);
       
     if (participantsError) {
       console.error("[TOURNAMENT] Error checking participants:", participantsError);
@@ -227,10 +276,19 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
     }
     
     if (!participants || participants.length < 4) {
+      console.error(`[TOURNAMENT] Not enough participants: ${participants?.length || 0}/4`);
       throw new Error(`Недостаточно участников для создания турнира: ${participants?.length || 0}/4`);
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
+    const statusReadyCount = participants.filter(p => p.status === 'ready').length;
+    
+    console.log(`[TOURNAMENT] Ready check stats - is_ready: ${readyCount}/4, status 'ready': ${statusReadyCount}/4`);
+    
+    participants.forEach(p => {
+      console.log(`[TOURNAMENT] Player ${p.user_id}: is_ready=${p.is_ready}, status=${p.status}`);
+    });
+    
     if (readyCount < 4) {
       throw new Error(`Не все игроки готовы: ${readyCount}/4`);
     }

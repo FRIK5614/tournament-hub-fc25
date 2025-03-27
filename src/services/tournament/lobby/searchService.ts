@@ -128,8 +128,44 @@ export const searchForQuickTournament = async () => {
     
     console.log(`[TOURNAMENT] User ${user.user.id} searching for quick tournament`);
     
-    // First, clean up any stale lobbies for this user
-    await cleanupStaleLobbyParticipation(user.user.id);
+    // First, check if user is already in an active lobby
+    const { data: activeParticipation, error: activeError } = await supabase
+      .from('lobby_participants')
+      .select('lobby_id, status')
+      .eq('user_id', user.user.id)
+      .in('status', ['searching', 'ready'])
+      .maybeSingle();
+      
+    if (activeParticipation && !activeError) {
+      // Check if the lobby is still valid
+      const { data: activeLobby, error: lobbyError } = await supabase
+        .from('tournament_lobbies')
+        .select('id, status, current_players, max_players, tournament_id')
+        .eq('id', activeParticipation.lobby_id)
+        .maybeSingle();
+        
+      if (activeLobby && !lobbyError && !activeLobby.tournament_id) {
+        console.log(`[TOURNAMENT] User is already in active lobby ${activeLobby.id} with status ${activeLobby.status}`);
+        
+        // Make sure max_players is set to 4
+        if (activeLobby.max_players !== 4) {
+          await supabase
+            .from('tournament_lobbies')
+            .update({ max_players: 4 })
+            .eq('id', activeLobby.id);
+          console.log(`[TOURNAMENT] Fixed max_players for lobby ${activeLobby.id} to 4`);
+        }
+        
+        // Return existing lobby instead of creating a new one
+        return { lobbyId: activeLobby.id };
+      } else {
+        // Clean up the stale participation
+        await cleanupStaleLobbyParticipation(user.user.id);
+      }
+    } else {
+      // Clean up any stale lobbies for this user
+      await cleanupStaleLobbyParticipation(user.user.id);
+    }
     
     // Try to find or create a lobby with retry
     const findLobbyWithRetry = async (maxRetries = 3): Promise<string> => {

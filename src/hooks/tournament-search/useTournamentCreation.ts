@@ -93,7 +93,7 @@ export function useTournamentCreation(
         
         const { data } = await supabase
           .from('tournament_lobbies')
-          .select('tournament_id, status')
+          .select('tournament_id, status, max_players')
           .eq('id', state.lobbyId)
           .maybeSingle();
 
@@ -104,6 +104,15 @@ export function useTournamentCreation(
           // Mark tournament creation as complete
           dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
           dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
+        }
+        
+        // Make sure max_players is always 4
+        if (data && data.max_players !== 4) {
+          console.log(`[TOURNAMENT-UI] Fixing max_players to 4 for lobby ${state.lobbyId}`);
+          await supabase
+            .from('tournament_lobbies')
+            .update({ max_players: 4 })
+            .eq('id', state.lobbyId);
         }
         
         // Also check if all players are ready but tournament not created yet
@@ -140,7 +149,7 @@ export function useTournamentCreation(
       // First check if tournament already exists for this lobby
       const { data: existingLobby } = await supabase
         .from('tournament_lobbies')
-        .select('tournament_id')
+        .select('tournament_id, max_players')
         .eq('id', lobbyId)
         .single();
         
@@ -152,12 +161,21 @@ export function useTournamentCreation(
         return;
       }
       
+      // Fix max_players if needed
+      if (existingLobby?.max_players !== 4) {
+        console.log(`[TOURNAMENT-UI] Fixing max_players to 4 for lobby ${lobbyId}`);
+        await supabase
+          .from('tournament_lobbies')
+          .update({ max_players: 4 })
+          .eq('id', lobbyId);
+      }
+      
       // Verify all players are ready
       const { data: participants, error: participantsError } = await supabase
         .from('lobby_participants')
         .select('user_id, is_ready, status')
         .eq('lobby_id', lobbyId)
-        .in('status', ['ready', 'searching']);
+        .in('status', ['ready']);
         
       if (participantsError) {
         console.error("[TOURNAMENT-UI] Error fetching participants:", participantsError);

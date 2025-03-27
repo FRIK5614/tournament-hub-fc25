@@ -1,7 +1,10 @@
 
 import { useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { cleanupDuplicateTournaments, analyzeTournamentCreation } from '@/services/tournament';
+import { 
+  cleanupDuplicateTournaments, 
+  analyzeTournamentCreation 
+} from '@/services/tournament';
 
 // Хук для анализа и очистки дубликатов турниров
 export const useCleanupTournaments = () => {

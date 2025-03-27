@@ -1,5 +1,11 @@
 
-// This file re-exports all tournament services from the new modules for backward compatibility
-// This ensures we don't break existing code while refactoring
+// This file re-exports tournament services
 
-export * from './tournament';
+// Only export specific functions to avoid conflicts
+export { 
+  getTournamentStandings,
+  cleanupDuplicateTournaments,
+  analyzeTournamentCreation,
+  getLongTermTournaments,
+  registerForLongTermTournament
+} from './tournament/tournamentService';

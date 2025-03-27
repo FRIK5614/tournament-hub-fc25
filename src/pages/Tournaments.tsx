@@ -31,8 +31,9 @@ const Tournaments = () => {
             .eq('id', user.user.id)
             .single();
             
-          // Check if the profile exists and has an admin field set to true
-          setIsAdmin(profile?.admin === true);
+          // Check if the profile exists and has admin privileges
+          // Use optional chaining and type checking to avoid TS errors
+          setIsAdmin(!!profile?.admin);
           
           // Если много дубликатов турниров, показываем компонент очистки
           const analysis = await analyzeTournamentCreation().catch(() => null);

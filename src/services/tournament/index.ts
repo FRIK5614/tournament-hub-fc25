@@ -1,8 +1,16 @@
 
 // Экспортируем все сервисы, связанные с турнирами
-export * from './tournamentService';
 export * from './matchService';
 export * from './lobby/index';
+
+// Re-export from tournamentService with explicit names to avoid conflicts
+export {
+  getTournamentStandings,
+  registerForLongTermTournament,
+  getLongTermTournaments,
+  cleanupDuplicateTournaments,
+  analyzeTournamentCreation
+} from './tournamentService';
 
 // Экспортируем типы
 export interface Tournament {

@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { LobbyParticipant } from "./types";
 
@@ -41,57 +42,38 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     throw error;
   }
   
+  console.log(`[TOURNAMENT-UI] Found ${data?.length || 0} participants for lobby ${lobbyId}`);
+  
   // Process the data to ensure it matches the LobbyParticipant type
-  // This handles the case where the profile relation might have errors
-  return (data || []).map(participant => ({
-    id: participant.id,
-    user_id: participant.user_id,
-    lobby_id: participant.lobby_id,
-    status: participant.status || 'searching',
-    is_ready: participant.is_ready || false,
-    profile: {
-      // Use a default profile if the relation has an error or is missing
-      username: (participant.profile &&
-                typeof participant.profile === 'object' &&
-                participant.profile !== null &&
-                'username' in (participant.profile as Record<string, any>))
-                ? (String(((participant.profile as Record<string, any>).username || 'Unknown Player')))
-                : 'Unknown Player',
-      avatar_url: (participant.profile &&
-                  typeof participant.profile === 'object' &&
-                  participant.profile !== null &&
-                  'avatar_url' in (participant.profile as Record<string, any>))
-                  ? ((((participant.profile as Record<string, any>).avatar_url || null) as string | null))
-                  : null
-    }
-  }));
+  return parseLobbyParticipants(data || []);
 };
 
 /**
  * Parse participants data to match LobbyParticipant type
  */
 export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] => {
-  return participants.map(participant => ({
-    id: participant.id,
-    user_id: participant.user_id,
-    lobby_id: participant.lobby_id,
-    status: participant.status || 'searching',
-    is_ready: participant.is_ready || false,
-    profile: {
-      username: (participant.profile &&
-                typeof participant.profile === 'object' &&
-                participant.profile !== null &&
-                'username' in (participant.profile as Record<string, any>))
-                ? (String(((participant.profile as Record<string, any>).username || 'Unknown Player')))
-                : 'Unknown Player',
-      avatar_url: (participant.profile &&
-                  typeof participant.profile === 'object' &&
-                  participant.profile !== null &&
-                  'avatar_url' in (participant.profile as Record<string, any>))
-                  ? ((((participant.profile as Record<string, any>).avatar_url || null) as string | null))
-                  : null
-    }
-  }));
+  return participants.map(participant => {
+    const profile = participant.profile;
+    const hasValidProfile = profile && 
+                           typeof profile === 'object' && 
+                           profile !== null;
+    
+    return {
+      id: participant.id,
+      user_id: participant.user_id,
+      lobby_id: participant.lobby_id,
+      status: participant.status || 'searching',
+      is_ready: participant.is_ready || false,
+      profile: {
+        username: hasValidProfile && 'username' in (profile as Record<string, any>)
+                 ? String((profile as Record<string, any>).username || 'Unknown Player')
+                 : 'Unknown Player',
+        avatar_url: hasValidProfile && 'avatar_url' in (profile as Record<string, any>)
+                   ? ((profile as Record<string, any>).avatar_url as string | null) || null
+                   : null
+      }
+    };
+  });
 };
 
 /**
@@ -160,11 +142,13 @@ export const enrichParticipantsWithProfiles = async (participants: any[]): Promi
     
     // Enrich participants with profile data
     return participants.map(participant => {
-      if (participant.profile && 
-          typeof participant.profile === 'object' && 
-          participant.profile !== null &&
-          !participant.profile.error && 
-          'username' in participant.profile) {
+      const hasValidProfile = participant.profile && 
+                             typeof participant.profile === 'object' && 
+                             participant.profile !== null &&
+                             !participant.profile.error && 
+                             'username' in participant.profile;
+      
+      if (hasValidProfile) {
         return participant;
       }
       
@@ -187,45 +171,51 @@ export const enrichParticipantsWithProfiles = async (participants: any[]): Promi
  * Update the current player count for a lobby
  */
 export const updateLobbyPlayerCount = async (lobbyId: string) => {
-  const { data: participants, error: countError } = await supabase
-    .from('lobby_participants')
-    .select('id')
-    .eq('lobby_id', lobbyId)
-    .in('status', ['searching', 'ready']);
-    
-  if (countError) {
-    console.error('[TOURNAMENT-UI] Error counting participants:', countError);
-    return;
-  }
-  
-  const count = participants?.length || 0;
-  
-  await supabase
-    .from('tournament_lobbies')
-    .update({ current_players: count })
-    .eq('id', lobbyId);
-    
-  console.log(`[TOURNAMENT-UI] Updated lobby ${lobbyId} player count to ${count}`);
-  
-  // If we have 4 players, check if we need to update status to ready_check
-  if (count === 4) {
-    const { data: lobby } = await supabase
-      .from('tournament_lobbies')
-      .select('status')
-      .eq('id', lobbyId)
-      .single();
+  try {
+    const { data: participants, error: countError } = await supabase
+      .from('lobby_participants')
+      .select('id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
       
-    if (lobby?.status === 'waiting') {
-      console.log(`[TOURNAMENT-UI] Lobby ${lobbyId} has 4 players, updating to ready_check`);
-      
-      await supabase
-        .from('tournament_lobbies')
-        .update({ 
-          status: 'ready_check', 
-          ready_check_started_at: new Date().toISOString() 
-        })
-        .eq('id', lobbyId)
-        .eq('status', 'waiting');
+    if (countError) {
+      console.error('[TOURNAMENT-UI] Error counting participants:', countError);
+      return;
     }
+    
+    const count = participants?.length || 0;
+    
+    console.log(`[TOURNAMENT-UI] Updating lobby ${lobbyId} player count to ${count}`);
+    
+    await supabase
+      .from('tournament_lobbies')
+      .update({ current_players: count })
+      .eq('id', lobbyId);
+      
+    console.log(`[TOURNAMENT-UI] Updated lobby ${lobbyId} player count to ${count}`);
+    
+    // If we have 4 players, check if we need to update status to ready_check
+    if (count === 4) {
+      const { data: lobby } = await supabase
+        .from('tournament_lobbies')
+        .select('status')
+        .eq('id', lobbyId)
+        .single();
+        
+      if (lobby?.status === 'waiting') {
+        console.log(`[TOURNAMENT-UI] Lobby ${lobbyId} has 4 players, updating to ready_check`);
+        
+        await supabase
+          .from('tournament_lobbies')
+          .update({ 
+            status: 'ready_check', 
+            ready_check_started_at: new Date().toISOString() 
+          })
+          .eq('id', lobbyId)
+          .eq('status', 'waiting');
+      }
+    }
+  } catch (error) {
+    console.error('[TOURNAMENT-UI] Error in updateLobbyPlayerCount:', error);
   }
 };

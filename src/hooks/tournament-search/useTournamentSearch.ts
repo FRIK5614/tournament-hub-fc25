@@ -145,6 +145,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
     isLoading: state.isLoading,
     isCreatingTournament: state.isCreatingTournament,
     tournamentCreationStatus: state.tournamentCreationStatus,
+    tournamentId: state.tournamentId,
     handleStartSearch,
     handleCancelSearch,
     handleReadyCheck,

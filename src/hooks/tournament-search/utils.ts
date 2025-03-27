@@ -24,25 +24,59 @@ export const fetchLobbyStatus = async (lobbyId: string) => {
  * Fetch participants in a tournament lobby
  */
 export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyParticipant[]> => {
-  const { data, error } = await supabase
-    .from('lobby_participants')
-    .select(`
-      id, 
-      user_id, 
-      lobby_id, 
-      is_ready, 
-      status,
-      profile:profiles!inner(username, avatar_url)
-    `)
-    .eq('lobby_id', lobbyId)
-    .in('status', ['searching', 'ready']);
-  
-  if (error) {
-    console.error("[TOURNAMENT-UI] Error fetching lobby participants:", error);
-    throw error;
+  try {
+    // First fetch participants
+    const { data: participantsData, error: participantsError } = await supabase
+      .from('lobby_participants')
+      .select('id, user_id, lobby_id, is_ready, status')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+    
+    if (participantsError) {
+      console.error("[TOURNAMENT-UI] Error fetching lobby participants:", participantsError);
+      throw participantsError;
+    }
+    
+    if (!participantsData || participantsData.length === 0) {
+      return [];
+    }
+    
+    // Then fetch profiles separately to avoid relation issues
+    const userIds = participantsData.map(p => p.user_id);
+    const { data: profilesData, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_url')
+      .in('id', userIds);
+    
+    if (profilesError) {
+      console.error("[TOURNAMENT-UI] Error fetching profiles:", profilesError);
+      // Return participants without profile data rather than failing
+      return participantsData.map(p => ({
+        ...p,
+        profile: { username: 'Unknown', avatar_url: null }
+      }));
+    }
+    
+    // Merge participant data with profile data
+    const participants: LobbyParticipant[] = participantsData.map(participant => {
+      const profile = profilesData?.find(p => p.id === participant.user_id);
+      return {
+        ...participant,
+        profile: profile ? { 
+          username: profile.username || 'Unknown', 
+          avatar_url: profile.avatar_url 
+        } : { 
+          username: 'Unknown', 
+          avatar_url: null 
+        }
+      };
+    });
+    
+    return participants;
+  } catch (error) {
+    console.error("[TOURNAMENT-UI] Error in fetchLobbyParticipants:", error);
+    return [];
   }
-  
-  return data || [];
 };
 
 /**

@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
@@ -27,7 +28,8 @@ const initialState: TournamentSearchState = {
   tournamentId: null,
   isLoading: false,
   searchAttempts: 0,
-  checkTournamentTrigger: false
+  checkTournamentTrigger: false,
+  creationAttempts: 0  // Added this line to fix the missing property
 };
 
 export const useTournamentSearch = () => {
@@ -58,11 +60,17 @@ export const useTournamentSearch = () => {
   const refreshLobbyData = useCallback(async (lobbyId: string) => {
     try {
       const lobbyStatus = await fetchLobbyStatus(lobbyId);
-      dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: lobbyStatus.status === 'ready_check' });
-      dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });
+      dispatch(prevState => ({
+        ...prevState,
+        readyCheckActive: lobbyStatus.status === 'ready_check',
+        countdownSeconds: 120
+      }));
 
       const participants = await fetchLobbyParticipants(lobbyId);
-      dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: participants });
+      dispatch(prevState => ({
+        ...prevState,
+        lobbyParticipants: participants
+      }));
     } catch (error) {
       console.error("Error refreshing lobby data:", error);
     }
@@ -73,13 +81,16 @@ export const useTournamentSearch = () => {
     handleCancelSearch, 
     handleReadyCheck,
     isUserReady
-  } = useSearchActions(state, dispatch, setupCleanupFunction, refreshLobbyData);
+  } = useSearchActions(state, dispatch as React.Dispatch<TournamentSearchAction>, setupCleanupFunction, refreshLobbyData);
   
-  useReadyCheck(state, dispatch, handleCancelSearch, () => {
-    dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
+  useReadyCheck(state, dispatch as React.Dispatch<TournamentSearchAction>, handleCancelSearch, () => {
+    dispatch(prevState => ({
+      ...prevState,
+      checkTournamentTrigger: true
+    }));
   });
   
-  const { checkTournamentCreation } = useTournamentCreation(state, dispatch, handleCancelSearch);
+  const { checkTournamentCreation } = useTournamentCreation(state, dispatch as React.Dispatch<TournamentSearchAction>, handleCancelSearch);
 
   return {
     ...state,

@@ -16,14 +16,16 @@ const TournamentSearchStatus = ({
   onCancel,
   onRetry
 }: TournamentSearchStatusProps) => {
+  const participantCount = lobbyParticipants.length || 0;
+  
   return (
     <div className="text-center">
       <div className="flex items-center justify-center mb-4">
         <Loader2 className="animate-spin mr-2" size={20} />
-        <span>Поиск игроков {lobbyParticipants.length}/4...</span>
+        <span>Поиск игроков {participantCount}/4...</span>
       </div>
       
-      {lobbyParticipants.length === 0 && (
+      {participantCount === 0 && (
         <div className="glass-card bg-orange-500/10 p-4 mb-4 text-sm">
           <AlertTriangle className="inline-block mr-2 text-orange-500" size={18} />
           <span className="text-orange-400">
@@ -32,17 +34,17 @@ const TournamentSearchStatus = ({
         </div>
       )}
       
-      {lobbyParticipants.length > 0 && (
+      {participantCount > 0 && (
         <div className="mb-4">
-          <h4 className="text-sm font-medium mb-2">Участники ({lobbyParticipants.length}/4):</h4>
+          <h4 className="text-sm font-medium mb-2">Участники ({participantCount}/4):</h4>
           <div className="flex flex-wrap justify-center gap-2">
             {lobbyParticipants.map((participant, idx) => (
               <div key={idx} className="glass-card p-2 text-xs flex items-center">
                 <span className="text-green-400 mr-1">●</span>
-                {participant.profile?.username || 'Игрок'}
+                {participant.profile?.username || `Player-${participant.user_id.substring(0, 6)}`}
               </div>
             ))}
-            {Array(4 - lobbyParticipants.length).fill(0).map((_, idx) => (
+            {Array(4 - participantCount).fill(0).map((_, idx) => (
               <div key={`empty-${idx}`} className="glass-card bg-opacity-30 p-2 text-xs text-gray-500">
                 Ожидание...
               </div>

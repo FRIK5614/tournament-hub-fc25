@@ -1,9 +1,13 @@
 
 import { useRef, useCallback, useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
-import { fetchLobbyStatus, fetchLobbyParticipants } from './utils';
 
 export type RefreshCallback = (lobbyId: string) => Promise<void>;
+
+// Determine if we're in a production environment
+const isProduction = window.location.hostname !== 'localhost' && 
+                    !window.location.hostname.includes('preview--') && 
+                    !window.location.hostname.includes('127.0.0.1');
 
 export const useSearchSubscriptions = (
   isSearching: boolean,
@@ -11,6 +15,20 @@ export const useSearchSubscriptions = (
   onDataRefresh: RefreshCallback
 ) => {
   const cleanupSubscriptionRef = useRef<(() => void) | null>(null);
+  const channelsRef = useRef<{lobbyChannel: any, lobbyStatusChannel: any}>({
+    lobbyChannel: null,
+    lobbyStatusChannel: null
+  });
+
+  // Function to log subscription status
+  const logSubscriptionStatus = useCallback((status: string, channelName: string) => {
+    console.log(`[TOURNAMENT-UI] ${channelName} subscription status: ${status}`);
+    
+    // In production, extra logging for debugging
+    if (isProduction && status !== 'SUBSCRIBED') {
+      console.warn(`[TOURNAMENT-UI] ${channelName} subscription issue in production: ${status}`);
+    }
+  }, []);
 
   // Setup subscription to lobby updates and return a cleanup function
   const setupSubscriptions = useCallback((lobbyId: string) => {
@@ -18,7 +36,7 @@ export const useSearchSubscriptions = (
     console.log(`[TOURNAMENT-UI] Setting up subscriptions for lobby ${lobbyId}`);
     
     try {
-      // Create a unique channel name with a timestamp and client ID to avoid conflicts
+      // Create unique channel names with a timestamp and client ID to avoid conflicts
       const timestamp = Date.now();
       const clientId = Math.random().toString(36).substring(2, 10);
       
@@ -36,9 +54,7 @@ export const useSearchSubscriptions = (
             console.error("[TOURNAMENT-UI] Error refreshing after lobby participants change:", err);
           });
         })
-        .subscribe((status) => {
-          console.log(`[TOURNAMENT-UI] Lobby channel subscription status: ${status}`);
-        });
+        .subscribe((status) => logSubscriptionStatus(status, "Lobby participants channel"));
         
       // Channel for lobby status
       const lobbyStatusChannel = supabase
@@ -54,9 +70,10 @@ export const useSearchSubscriptions = (
             console.error("[TOURNAMENT-UI] Error refreshing after lobby status change:", err);
           });
         })
-        .subscribe((status) => {
-          console.log(`[TOURNAMENT-UI] Lobby status channel subscription status: ${status}`);
-        });
+        .subscribe((status) => logSubscriptionStatus(status, "Lobby status channel"));
+      
+      // Store channel references
+      channelsRef.current = { lobbyChannel, lobbyStatusChannel };
         
       return () => {
         console.log(`[TOURNAMENT-UI] Cleaning up subscriptions for lobby ${lobbyId}`);
@@ -71,7 +88,26 @@ export const useSearchSubscriptions = (
       console.error("[TOURNAMENT-UI] Error setting up subscriptions:", error);
       return () => {}; // Return empty cleanup function to prevent errors
     }
-  }, [onDataRefresh]);
+  }, [onDataRefresh, logSubscriptionStatus]);
+
+  // Helper to check subscription status
+  const checkSubscriptionStatus = useCallback(() => {
+    if (channelsRef.current.lobbyChannel) {
+      const subscriptionStatus = channelsRef.current.lobbyChannel.state;
+      
+      // If we detect a problematic state in production, attempt reset
+      if (isProduction && subscriptionStatus !== 'SUBSCRIBED') {
+        console.warn(`[TOURNAMENT-UI] Detected problematic subscription state: ${subscriptionStatus}`);
+        
+        // Force refresh data even if subscription is in a bad state
+        if (lobbyId) {
+          onDataRefresh(lobbyId).catch(err => {
+            console.error("[TOURNAMENT-UI] Error in manual refresh:", err);
+          });
+        }
+      }
+    }
+  }, [lobbyId, onDataRefresh]);
 
   // Effect to manage subscriptions
   useEffect(() => {
@@ -89,14 +125,32 @@ export const useSearchSubscriptions = (
       onDataRefresh(lobbyId).catch(err => {
         console.error("[TOURNAMENT-UI] Error in initial subscription data refresh:", err);
       });
+      
+      // Set up periodic subscription status check in production environments
+      let statusCheckInterval: number | null = null;
+      if (isProduction) {
+        statusCheckInterval = window.setInterval(checkSubscriptionStatus, 5000);
+      }
+      
+      // Cleanup function
+      return () => {
+        if (cleanupSubscriptionRef.current) {
+          cleanupSubscriptionRef.current();
+          cleanupSubscriptionRef.current = null;
+        }
+        
+        if (statusCheckInterval) {
+          clearInterval(statusCheckInterval);
+        }
+      };
     }
     
-    // Cleanup function
+    // Cleanup function when searching is disabled
     return () => {
       if (cleanupSubscriptionRef.current) {
         cleanupSubscriptionRef.current();
         cleanupSubscriptionRef.current = null;
       }
     };
-  }, [isSearching, lobbyId, setupSubscriptions, onDataRefresh]);
+  }, [isSearching, lobbyId, setupSubscriptions, onDataRefresh, checkSubscriptionStatus]);
 };

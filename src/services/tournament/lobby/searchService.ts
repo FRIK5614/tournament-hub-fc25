@@ -3,17 +3,35 @@ import { supabase } from "@/integrations/supabase/client";
 import { withRetry, cleanupStaleLobbyParticipation, updateLobbyPlayerCount, delay } from "../utils";
 import { leaveQuickTournament } from "./leaveService";
 
+// Helper function for debugging errors in different environments
+const logError = (context: string, error: any) => {
+  const isProduction = window.location.hostname !== 'localhost' && 
+                      !window.location.hostname.includes('preview--');
+  
+  console.error(`[TOURNAMENT] Error in ${context}:`, error);
+  
+  // In production, add more detail to help diagnose issues
+  if (isProduction) {
+    console.error(`[TOURNAMENT] Error details for ${context}:`, {
+      message: error.message,
+      name: error.name,
+      code: error.code,
+      stack: error.stack
+    });
+  }
+};
+
 /**
  * Search for an available quick tournament or create a new one
  */
 export const searchForQuickTournament = async () => {
-  const { data: user } = await supabase.auth.getUser();
-  
-  if (!user?.user) {
-    throw new Error("Необходимо авторизоваться для участия в турнирах");
-  }
-  
   try {
+    const { data: user } = await supabase.auth.getUser();
+    
+    if (!user?.user) {
+      throw new Error("Необходимо авторизоваться для участия в турнирах");
+    }
+    
     console.log(`[TOURNAMENT] User ${user.user.id} searching for quick tournament`);
     
     // First, clean up any stale lobbies for this user
@@ -27,6 +45,10 @@ export const searchForQuickTournament = async () => {
       .in('status', ['searching', 'ready'])
       .maybeSingle();
       
+    if (existingError) {
+      logError("checking existing participation", existingError);
+    }
+      
     if (existingParticipation) {
       console.log(`[TOURNAMENT] User ${user.user.id} is already in lobby ${existingParticipation.lobby_id} with status ${existingParticipation.status}`);
       
@@ -36,6 +58,10 @@ export const searchForQuickTournament = async () => {
         .select('id, status, current_players, tournament_id, created_at')
         .eq('id', existingParticipation.lobby_id)
         .maybeSingle();
+        
+      if (lobbyError) {
+        logError("checking existing lobby", lobbyError);
+      }
         
       if (!lobbyError && lobby) {
         // Check if the lobby is too old (more than 15 minutes)
@@ -89,24 +115,37 @@ export const searchForQuickTournament = async () => {
       }
     }
     
-    // Create a new lobby or find an existing one
-    console.log("[TOURNAMENT] Calling match_players_for_quick_tournament function");
+    // Create a new lobby or find an existing one with retry logic
+    const findLobby = async (retries = 2): Promise<string> => {
+      try {
+        console.log("[TOURNAMENT] Calling match_players_for_quick_tournament function");
+        
+        // Call RPC function without timestamp parameters
+        const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
+        
+        if (error) {
+          logError("match_players_for_quick_tournament", error);
+          throw error;
+        }
+        
+        if (!data) {
+          console.error("[TOURNAMENT] No lobby ID returned from match_players_for_quick_tournament");
+          throw new Error("Сервер не вернул ID лобби. Пожалуйста, попробуйте снова.");
+        }
+        
+        return data;
+      } catch (error) {
+        if (retries > 0) {
+          console.log(`[TOURNAMENT] Retrying match_players call, ${retries} retries left`);
+          await delay(1000);
+          return findLobby(retries - 1);
+        }
+        throw error;
+      }
+    };
     
-    // Call RPC function without timestamp parameters
-    const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
-    
-    if (error) {
-      console.error("[TOURNAMENT] Error in match_players_for_quick_tournament:", error);
-      throw new Error("Не удалось найти турнир. Пожалуйста, попробуйте снова.");
-    }
-    
-    if (!data) {
-      console.error("[TOURNAMENT] No lobby ID returned from match_players_for_quick_tournament");
-      throw new Error("Сервер не вернул ID лобби. Пожалуйста, попробуйте снова.");
-    }
-    
-    // Add the user to the lobby
-    const lobbyId = data;
+    // Try to find or create a lobby
+    const lobbyId = await findLobby();
     console.log(`[TOURNAMENT] User ${user.user.id} matched to lobby: ${lobbyId}`);
     
     // Check if the user is already in this lobby
@@ -118,7 +157,7 @@ export const searchForQuickTournament = async () => {
       .maybeSingle();
     
     if (checkError) {
-      console.error("[TOURNAMENT] Error checking participant:", checkError);
+      logError("checking participant", checkError);
     }
     
     if (existingParticipant) {
@@ -135,7 +174,7 @@ export const searchForQuickTournament = async () => {
           .eq('id', existingParticipant.id);
           
         if (updateError) {
-          console.error("[TOURNAMENT] Error updating participant status:", updateError);
+          logError("updating participant status", updateError);
         } else {
           console.log(`[TOURNAMENT] Updated participant ${existingParticipant.id} status to 'searching'`);
         }
@@ -157,7 +196,7 @@ export const searchForQuickTournament = async () => {
         });
       
       if (joinError) {
-        console.error("[TOURNAMENT] Error joining lobby:", joinError);
+        logError("joining lobby", joinError);
         throw new Error("Не удалось присоединиться к турниру. Пожалуйста, попробуйте снова.");
       }
     }
@@ -167,7 +206,7 @@ export const searchForQuickTournament = async () => {
     
     return { lobbyId };
   } catch (error) {
-    console.error("[TOURNAMENT] Error in searchForQuickTournament:", error);
+    logError("searchForQuickTournament", error);
     throw error;
   }
 };

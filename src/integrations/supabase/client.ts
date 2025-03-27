@@ -21,39 +21,41 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache', // Prevent caching for all requests
     },
-    // Set a custom fetch function that properly handles requests in all environments
+    // Enhanced fetch function that properly handles requests in all environments
     fetch: (url, options) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-      
       try {
         // Create a clean URL without any timestamp parameters
         const urlObj = new URL(url.toString());
         
-        // Remove any timestamps or unnecessary parameters that might cause issues
-        if (urlObj.searchParams.has('_t')) {
-          urlObj.searchParams.delete('_t');
-        }
+        // Remove any parameters that might cause issues with some CDNs or proxies
+        const keysToRemove = ['_t', '_cache', 'timestamp'];
+        keysToRemove.forEach(key => {
+          if (urlObj.searchParams.has(key)) {
+            urlObj.searchParams.delete(key);
+          }
+        });
         
-        // Remove any cache-related parameters
-        if (urlObj.searchParams.has('_cache')) {
-          urlObj.searchParams.delete('_cache');
-        }
+        // Set a timeout for the request to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
         
         return fetch(urlObj.toString(), {
           ...options,
           signal: controller.signal,
-          cache: 'no-cache',
+          cache: 'no-store', // Force network request every time
         }).finally(() => {
           clearTimeout(timeoutId);
         });
       } catch (error) {
-        console.error("Error in Supabase fetch wrapper:", error);
+        console.error("[SUPABASE] Error in fetch wrapper:", error);
         // Fall back to original URL if URL parsing fails
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        
         return fetch(url.toString(), {
           ...options,
           signal: controller.signal,
-          cache: 'no-cache',
+          cache: 'no-store',
         }).finally(() => {
           clearTimeout(timeoutId);
         });
@@ -69,3 +71,23 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     },
   },
 });
+
+// Export a function to reset the client's internal state if needed
+export const resetSupabaseConnection = () => {
+  try {
+    // Remove all channels
+    const channels = supabase.getChannels();
+    channels.forEach(channel => {
+      try {
+        supabase.removeChannel(channel);
+      } catch (e) {
+        console.error("[SUPABASE] Error removing channel:", e);
+      }
+    });
+    
+    // Log the reset
+    console.log("[SUPABASE] Connection state reset successfully");
+  } catch (error) {
+    console.error("[SUPABASE] Error resetting connection state:", error);
+  }
+};

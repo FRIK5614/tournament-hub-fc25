@@ -18,7 +18,7 @@ export const useSearchSubscriptions = (
     console.log(`[TOURNAMENT-UI] Setting up subscriptions for lobby ${lobbyId}`);
     
     try {
-      // Create a unique channel name with a timestamp to avoid conflicts
+      // Create a unique channel name with a timestamp and client ID to avoid conflicts
       const timestamp = Date.now();
       const clientId = Math.random().toString(36).substring(2, 10);
       

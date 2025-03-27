@@ -92,7 +92,7 @@ export const searchForQuickTournament = async () => {
     // Create a new lobby or find an existing one
     console.log("[TOURNAMENT] Calling match_players_for_quick_tournament function");
     
-    // Use direct RPC call without timestamp parameter
+    // Call RPC function without timestamp parameters
     const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
     
     if (error) {

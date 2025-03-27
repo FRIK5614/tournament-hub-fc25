@@ -21,15 +21,19 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache', // Prevent caching for all requests
     },
-    // Set a custom fetch function that properly handles promises
+    // Set a custom fetch function that properly handles requests in all environments
     fetch: (url, options) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
       
-      // Remove the timestamp parameter which is causing the filter parsing error
-      // Don't add timestamp to URLs as it's causing filter parsing issues
+      // Create a clean URL without any timestamp parameters
+      const urlObj = new URL(url.toString());
+      // Remove any timestamps or unnecessary parameters that might cause issues
+      if (urlObj.searchParams.has('_t')) {
+        urlObj.searchParams.delete('_t');
+      }
       
-      return fetch(url, {
+      return fetch(urlObj, {
         ...options,
         signal: controller.signal,
         cache: 'no-cache',

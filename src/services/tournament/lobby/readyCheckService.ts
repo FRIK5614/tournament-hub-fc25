@@ -1,6 +1,5 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { updateTournamentLobbyPlayerCount } from "../utils";
 
 /**
  * Mark a user as ready in a tournament lobby

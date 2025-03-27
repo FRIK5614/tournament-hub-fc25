@@ -54,14 +54,14 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       username: (participant.profile &&
                 typeof participant.profile === 'object' &&
                 participant.profile !== null &&
-                'username' in participant.profile)
-                ? (String((participant.profile as any).username || 'Unknown Player'))
+                'username' in (participant.profile as Record<string, any>))
+                ? (String(((participant.profile as Record<string, any>).username || 'Unknown Player')))
                 : 'Unknown Player',
       avatar_url: (participant.profile &&
                   typeof participant.profile === 'object' &&
                   participant.profile !== null &&
-                  'avatar_url' in participant.profile)
-                  ? (((participant.profile as any).avatar_url || null) as string | null)
+                  'avatar_url' in (participant.profile as Record<string, any>))
+                  ? ((((participant.profile as Record<string, any>).avatar_url || null) as string | null))
                   : null
     }
   }));
@@ -81,14 +81,14 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
       username: (participant.profile &&
                 typeof participant.profile === 'object' &&
                 participant.profile !== null &&
-                'username' in participant.profile)
-                ? (String((participant.profile as any).username || 'Unknown Player'))
+                'username' in (participant.profile as Record<string, any>))
+                ? (String(((participant.profile as Record<string, any>).username || 'Unknown Player')))
                 : 'Unknown Player',
       avatar_url: (participant.profile &&
                   typeof participant.profile === 'object' &&
                   participant.profile !== null &&
-                  'avatar_url' in participant.profile)
-                  ? (((participant.profile as any).avatar_url || null) as string | null)
+                  'avatar_url' in (participant.profile as Record<string, any>))
+                  ? ((((participant.profile as Record<string, any>).avatar_url || null) as string | null))
                   : null
     }
   }));

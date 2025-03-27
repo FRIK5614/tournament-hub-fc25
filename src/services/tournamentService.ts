@@ -128,7 +128,15 @@ export const submitMatchResult = async (
   // If user is player1, they're submitting the result
   const isPlayer1 = match.player1_id === user.user.id;
   
-  const updateData = {
+  const updateData: {
+    player1_score: number;
+    player2_score: number;
+    result_image_url: string;
+    status: string;
+    winner_id: string;
+    result_confirmed?: boolean;
+    result_confirmed_by_player2?: boolean;
+  } = {
     player1_score: player1Score,
     player2_score: player2Score,
     result_image_url: resultImageUrl,

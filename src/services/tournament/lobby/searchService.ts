@@ -1,6 +1,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
+import { updateLobbyPlayerCount } from "@/hooks/tournament-search/utils";
 
 // Helper function for debugging errors in different environments
 const logError = (context: string, error: any) => {
@@ -258,11 +259,11 @@ export const searchForQuickTournament = async () => {
         .eq('status', 'searching');
     }
     
-    // Update the lobby's current_players count
+    // Update the lobby's current_players count - force this to update after user was added
     await updateLobbyPlayerCount(lobbyId);
     
     // Add a slight delay and verify the player was added correctly
-    await delay(500);
+    await delay(1000);
     
     const { data: verifyParticipant } = await supabase
       .from('lobby_participants')
@@ -286,6 +287,9 @@ export const searchForQuickTournament = async () => {
         
       // Note: Removed the onConflict() method which was causing the TypeScript error
     }
+    
+    // Force update player count one more time to ensure accuracy
+    await updateLobbyPlayerCount(lobbyId);
     
     return { lobbyId };
   } catch (error) {

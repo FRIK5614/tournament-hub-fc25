@@ -37,9 +37,9 @@ const TournamentSearchStatus = ({
           <h4 className="text-sm font-medium mb-2">Участники ({lobbyParticipants.length}/4):</h4>
           <div className="flex flex-wrap justify-center gap-2">
             {lobbyParticipants.map((participant, idx) => (
-              <div key={idx} className="glass-card p-2 text-xs">
+              <div key={idx} className="glass-card p-2 text-xs flex items-center">
+                <span className="text-green-400 mr-1">●</span>
                 {participant.profile?.username || 'Игрок'}
-                <span className="text-green-400 ml-1">(подключен)</span>
               </div>
             ))}
             {Array(4 - lobbyParticipants.length).fill(0).map((_, idx) => (

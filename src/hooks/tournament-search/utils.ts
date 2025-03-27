@@ -181,10 +181,16 @@ export const enrichParticipantsWithProfiles = async (participants: any[]): Promi
  * Update the current player count for a lobby
  */
 export const updateLobbyPlayerCount = async (lobbyId: string) => {
+  if (!lobbyId) {
+    console.error('[TOURNAMENT-UI] Cannot update player count: No lobby ID provided');
+    return;
+  }
+  
   try {
     // Add a delay to ensure database consistency
     await new Promise(resolve => setTimeout(resolve, 500));
     
+    // Count active participants in lobby
     const { data: participants, error: countError } = await supabase
       .from('lobby_participants')
       .select('id, user_id, status')
@@ -210,11 +216,17 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
       
     console.log(`[TOURNAMENT-UI] Current lobby state:`, lobbyData);
     
-    await supabase
+    // Update the lobby's current_players count
+    const { error: updateError } = await supabase
       .from('tournament_lobbies')
       .update({ current_players: count })
       .eq('id', lobbyId);
       
+    if (updateError) {
+      console.error('[TOURNAMENT-UI] Error updating lobby player count:', updateError);
+      return;
+    }
+    
     console.log(`[TOURNAMENT-UI] Updated lobby ${lobbyId} player count to ${count}`);
     
     // If we have 4 players, check if we need to update status to ready_check
@@ -238,6 +250,23 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
           .eq('status', 'waiting');
       }
     }
+    
+    // Re-fetch participants to sync UI
+    const { data: updatedParticipants } = await supabase
+      .from('lobby_participants')
+      .select(`
+        id, 
+        user_id, 
+        lobby_id,
+        status, 
+        is_ready,
+        profile:profiles(id, username, avatar_url)
+      `)
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+      
+    console.log(`[TOURNAMENT-UI] After update: ${updatedParticipants?.length || 0} participants`);
+    
   } catch (error) {
     console.error('[TOURNAMENT-UI] Error in updateLobbyPlayerCount:', error);
   }

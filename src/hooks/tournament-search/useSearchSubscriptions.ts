@@ -28,6 +28,12 @@ export const useSearchSubscriptions = (
         (payload) => {
           console.log('[TOURNAMENT-UI] Lobby changed:', payload.new);
           
+          // If player count changed, refresh participant data
+          if (payload.new.current_players !== payload.old.current_players) {
+            console.log('[TOURNAMENT-UI] Player count changed, refreshing participants');
+            refreshLobbyData(lobbyId);
+          }
+          
           // Check if status changed to ready_check
           if (payload.new.status === 'ready_check' && payload.old.status !== 'ready_check') {
             console.log('[TOURNAMENT-UI] Ready check activated!');
@@ -47,28 +53,36 @@ export const useSearchSubscriptions = (
       )
       .subscribe();
 
-    // Subscribe to participant changes
+    // Subscribe to participant changes (both INSERT and UPDATE)
     const participantsChannel = supabase
       .channel(`participants_changes_${lobbyId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: '*',  // Listen to all events (INSERT, UPDATE, DELETE)
           schema: 'public',
           table: 'lobby_participants',
           filter: `lobby_id=eq.${lobbyId}`
         },
         (payload) => {
           console.log('[TOURNAMENT-UI] Participant changed:', payload);
+          // Any change to participants should trigger a refresh
           refreshLobbyData(lobbyId);
         }
       )
       .subscribe();
 
+    // Poll for changes every 3 seconds as a backup mechanism
+    const intervalId = setInterval(() => {
+      console.log('[TOURNAMENT-UI] Polling for lobby data updates');
+      refreshLobbyData(lobbyId);
+    }, 3000);
+
     return () => {
       console.log(`[TOURNAMENT-UI] Cleaning up realtime subscriptions for lobby ${lobbyId}`);
       supabase.removeChannel(lobbyChannel);
       supabase.removeChannel(participantsChannel);
+      clearInterval(intervalId);
     };
   }, [isSearching, lobbyId, refreshLobbyData, dispatch]);
 };

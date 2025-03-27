@@ -66,6 +66,7 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
   return [];
 };
 
+// Fixed the function signature to take a callback and return a cleanup function
 export const setupLobbySubscriptions = (
   lobbyId: string, 
   callback: () => void

@@ -1,6 +1,8 @@
 
 import { Check, X, Loader2, AlertTriangle } from 'lucide-react';
 import { LobbyParticipant } from '@/hooks/useTournamentSearch';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface ReadyCheckProps {
   countdownSeconds: number;
@@ -67,16 +69,20 @@ const ReadyCheck = ({
     );
   };
 
-  // Log participants and ready players for debugging
-  console.log("[TOURNAMENT-UI] ReadyCheck rendering with participants:", 
-    lobbyParticipants.map(p => ({ id: p.user_id, ready: isPlayerReady(p), status: p.status }))
-  );
-  console.log("[TOURNAMENT-UI] ReadyCheck readyPlayers:", readyPlayers);
-
   // Count ready players for debugging
   const readyCount = lobbyParticipants.filter(p => isPlayerReady(p)).length;
   const totalCount = lobbyParticipants.length;
-  console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/${totalCount}`);
+  const searchingCount = lobbyParticipants.filter(p => p.status === 'searching').length;
+  
+  console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/${totalCount}, Searching: ${searchingCount}`);
+  console.log("[TOURNAMENT-UI] Ready check participants:", 
+    lobbyParticipants.map(p => ({ 
+      id: p.user_id, 
+      username: p.profile?.username,
+      ready: isPlayerReady(p), 
+      status: p.status 
+    }))
+  );
 
   return (
     <div className="text-center">
@@ -84,9 +90,9 @@ const ReadyCheck = ({
       <p className="text-gray-300 mb-2">Подтвердите готовность начать турнир ({readyCount}/{totalCount})</p>
       
       <div className="flex justify-center mb-4">
-        <div className="glass-card bg-yellow-500/20 border-yellow-500 px-3 py-1 rounded-full text-sm">
+        <Badge variant="outline" className="bg-yellow-500/20 border-yellow-500 px-3 py-1 rounded-full text-sm">
           {countdownSeconds} сек.
-        </div>
+        </Badge>
       </div>
       
       <div className="grid grid-cols-2 gap-4 mb-4">
@@ -97,20 +103,26 @@ const ReadyCheck = ({
               isPlayerReady(participant) 
                 ? 'border-green-500' 
                 : !isPlayerInReadyCheck(participant)
-                  ? 'border-yellow-500'
+                  ? 'border-orange-500'
                   : 'border-gray-500'
             }`}
           >
             <span>{participant.profile?.username || 'Игрок'}</span>
             {isPlayerReady(participant) ? (
-              <Check className="text-green-500" size={18} />
+              <div className="flex items-center">
+                <span className="text-green-500 mr-1 text-xs">Готов</span>
+                <Check className="text-green-500" size={18} />
+              </div>
             ) : !isPlayerInReadyCheck(participant) ? (
               <div className="flex items-center">
-                <span className="text-yellow-500 mr-1 text-xs">В поиске</span>
-                <Loader2 className="animate-spin text-yellow-500" size={14} />
+                <span className="text-orange-500 mr-1 text-xs">В поиске</span>
+                <Loader2 className="animate-spin text-orange-500" size={14} />
               </div>
             ) : (
-              <Loader2 className="animate-spin text-yellow-500" size={18} />
+              <div className="flex items-center">
+                <span className="text-yellow-500 mr-1 text-xs">Ожидание</span>
+                <Loader2 className="animate-spin text-yellow-500" size={18} />
+              </div>
             )}
           </div>
         ))}
@@ -120,8 +132,9 @@ const ReadyCheck = ({
       
       <div className="flex gap-3 justify-center">
         {!isUserReady && (
-          <button 
-            className={`btn-primary bg-green-600 hover:bg-green-700 ${isLoading ? 'opacity-50' : ''}`}
+          <Button 
+            variant="default"
+            className="bg-green-600 hover:bg-green-700"
             onClick={onReady}
             disabled={isLoading}
           >
@@ -131,11 +144,12 @@ const ReadyCheck = ({
               <Check size={18} className="mr-2" />
             )}
             Я готов
-          </button>
+          </Button>
         )}
         
-        <button 
-          className="btn-outline bg-red-500/20 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+        <Button 
+          variant="outline"
+          className="bg-red-500/20 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
           onClick={onCancel}
           disabled={isLoading}
         >
@@ -145,7 +159,7 @@ const ReadyCheck = ({
             <X size={18} className="mr-2" />
           )}
           Отмена
-        </button>
+        </Button>
       </div>
     </div>
   );

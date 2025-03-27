@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { TournamentSearchState } from './types';
 import { TournamentSearchAction } from './reducer';
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 export const useReadyCheck = (
   state: TournamentSearchState,
@@ -28,6 +29,37 @@ export const useReadyCheck = (
       }
     };
   }, [state.readyCheckActive, state.countdownSeconds, dispatch]);
+
+  // Fix desynchronized player states when ready check begins
+  useEffect(() => {
+    if (state.readyCheckActive && state.lobbyId && state.currentUserId) {
+      const updatePlayerState = async () => {
+        try {
+          // Check current player's status
+          const { data: currentPlayer } = await supabase
+            .from('lobby_participants')
+            .select('status, is_ready')
+            .eq('lobby_id', state.lobbyId)
+            .eq('user_id', state.currentUserId)
+            .maybeSingle();
+
+          // If player is in 'searching' status when ready check is active, update it to 'ready'
+          if (currentPlayer && currentPlayer.status === 'searching') {
+            console.log("[TOURNAMENT-UI] Fixing player status to 'ready' during ready check");
+            await supabase
+              .from('lobby_participants')
+              .update({ status: 'ready' })
+              .eq('lobby_id', state.lobbyId)
+              .eq('user_id', state.currentUserId);
+          }
+        } catch (error) {
+          console.error("[TOURNAMENT-UI] Error syncing player state:", error);
+        }
+      };
+      
+      updatePlayerState();
+    }
+  }, [state.readyCheckActive, state.lobbyId, state.currentUserId]);
 
   // Handle countdown completion
   useEffect(() => {

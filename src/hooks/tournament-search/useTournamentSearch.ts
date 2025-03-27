@@ -94,25 +94,28 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
             .from('lobby_participants')
             .update({ status: 'ready' })
             .eq('lobby_id', state.lobbyId)
-            .in('status', ['searching']);
+            .eq('status', 'searching');
             
           if (error) {
             console.error("[TOURNAMENT-UI] Error updating participant statuses:", error);
           } else {
-            console.log("[TOURNAMENT-UI] Updated participants to 'ready' status in ready check mode");
+            console.log("[TOURNAMENT-UI] Updated participants from 'searching' to 'ready' status in ready check mode");
           }
+          
+          // Fetch updated participants to ensure UI is in sync
+          await refreshLobbyData(state.lobbyId);
         } catch (err) {
           console.error("[TOURNAMENT-UI] Error in syncLobbyParticipantStatuses:", err);
         }
       };
       
-      // Run immediately and then every 3 seconds
+      // Run immediately and then every 2 seconds (more frequent than before)
       syncLobbyParticipantStatuses();
-      const intervalId = setInterval(syncLobbyParticipantStatuses, 3000);
+      const intervalId = setInterval(syncLobbyParticipantStatuses, 2000);
       
       return () => clearInterval(intervalId);
     }
-  }, [state.isSearching, state.lobbyId, state.readyCheckActive]);
+  }, [state.isSearching, state.lobbyId, state.readyCheckActive, refreshLobbyData]);
 
   // Debug logging for state changes
   useEffect(() => {

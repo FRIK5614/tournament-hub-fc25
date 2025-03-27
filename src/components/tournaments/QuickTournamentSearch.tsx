@@ -22,18 +22,38 @@ const QuickTournamentSearch = () => {
     if (!lobbyId) return;
 
     const fetchLobbyParticipants = async () => {
-      const { data, error } = await supabase
-        .from('lobby_participants')
-        .select('*, user:user_id(username, avatar_url)')
-        .eq('lobby_id', lobbyId);
-      
-      if (error) {
-        console.error("Error fetching lobby participants:", error);
-        return;
+      try {
+        const { data: user } = await supabase.auth.getUser();
+        if (!user?.user) return;
+        
+        // Get the current lobby information
+        const { data: lobbyData, error: lobbyError } = await supabase
+          .from('tournament_lobbies')
+          .select('current_players')
+          .eq('id', lobbyId)
+          .single();
+        
+        if (lobbyError) {
+          console.error("Error fetching lobby:", lobbyError);
+          return;
+        }
+        
+        // Get participant data
+        const { data, error } = await supabase
+          .from('lobby_participants')
+          .select('*, profiles:user_id(username, avatar_url)')
+          .eq('lobby_id', lobbyId);
+        
+        if (error) {
+          console.error("Error fetching lobby participants:", error);
+          return;
+        }
+        
+        setLobbyParticipants(data || []);
+        setReadyPlayers(data?.filter(p => p.is_ready).map(p => p.user_id) || []);
+      } catch (error) {
+        console.error("Error in fetchLobbyParticipants:", error);
       }
-      
-      setLobbyParticipants(data || []);
-      setReadyPlayers(data?.filter(p => p.is_ready).map(p => p.user_id) || []);
     };
 
     fetchLobbyParticipants();
@@ -46,7 +66,7 @@ const QuickTournamentSearch = () => {
         schema: 'public',
         table: 'lobby_participants',
         filter: `lobby_id=eq.${lobbyId}`
-      }, (payload) => {
+      }, () => {
         fetchLobbyParticipants();
       })
       .subscribe();
@@ -76,6 +96,9 @@ const QuickTournamentSearch = () => {
             navigate(`/tournaments/${payload.new.tournament_id}`);
           }
         }
+        
+        // Update to see if we need to refresh participants
+        fetchLobbyParticipants();
       })
       .subscribe();
       
@@ -134,6 +157,25 @@ const QuickTournamentSearch = () => {
       
       const newLobbyId = await searchForQuickTournament();
       setLobbyId(newLobbyId);
+      
+      // Immediately after joining, set lobbyParticipants to include current user
+      const { data: user } = await supabase.auth.getUser();
+      if (user?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username, avatar_url')
+          .eq('id', user.user.id)
+          .single();
+          
+        if (profile) {
+          setLobbyParticipants([{
+            user_id: user.user.id,
+            lobby_id: newLobbyId,
+            profiles: profile
+          }]);
+        }
+      }
+      
       setSearchAttempts(0); // Reset attempts on success
     } catch (error: any) {
       console.error("Error searching for tournament:", error);
@@ -248,7 +290,7 @@ const QuickTournamentSearch = () => {
               <div className="flex justify-center gap-2">
                 {lobbyParticipants.map((participant, idx) => (
                   <div key={idx} className="glass-card p-2 text-xs">
-                    {participant.user?.username || 'Игрок'}
+                    {participant.profiles?.username || 'Игрок'}
                   </div>
                 ))}
                 {Array(4 - lobbyParticipants.length).fill(0).map((_, idx) => (
@@ -290,7 +332,7 @@ const QuickTournamentSearch = () => {
                     : 'border-gray-500'
                 }`}
               >
-                <span>{participant.user?.username || 'Игрок'}</span>
+                <span>{participant.profiles?.username || 'Игрок'}</span>
                 {readyPlayers.includes(participant.user_id) ? (
                   <Check className="text-green-500" size={18} />
                 ) : (

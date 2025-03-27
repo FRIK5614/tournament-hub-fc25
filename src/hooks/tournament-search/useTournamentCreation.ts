@@ -176,9 +176,33 @@ export function useTournamentCreation(
       
       // Try to create tournament by directly calling RPC
       try {
-        await supabase.rpc('create_matches_for_quick_tournament', {
+        const { error: rpcError } = await supabase.rpc('create_matches_for_quick_tournament', {
           lobby_id: lobbyId
         });
+        
+        if (rpcError) {
+          console.error("[TOURNAMENT-UI] Error calling tournament creation RPC:", rpcError);
+          dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'failed' });
+          
+          // Check if tournament was created despite the error
+          const { data: checkAfterError } = await supabase
+            .from('tournament_lobbies')
+            .select('tournament_id')
+            .eq('id', lobbyId)
+            .maybeSingle();
+            
+          if (checkAfterError?.tournament_id) {
+            console.log(`[TOURNAMENT-UI] Tournament was created despite RPC error: ${checkAfterError.tournament_id}`);
+            dispatch({ type: 'SET_TOURNAMENT_ID', payload: checkAfterError.tournament_id });
+            dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
+            dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
+            return;
+          }
+          
+          // Try direct creation instead
+          await forceCreateTournament(lobbyId);
+          return;
+        }
         
         console.log(`[TOURNAMENT-UI] Tournament creation RPC called successfully`);
         
@@ -229,7 +253,7 @@ export function useTournamentCreation(
       // Try direct tournament creation
       await forceCreateTournament(lobbyId);
     }
-  }, [state, dispatch, toast]);
+  }, [state, dispatch]);
   
   // Forcefully create tournament directly
   const forceCreateTournament = async (lobbyId: string) => {
@@ -242,7 +266,7 @@ export function useTournamentCreation(
       // Get participants
       const { data: participants } = await supabase
         .from('lobby_participants')
-        .select('user_id, profile:profiles(username)')
+        .select('user_id, profile:profiles(id, username, avatar_url)')
         .eq('lobby_id', lobbyId)
         .in('status', ['ready', 'searching']);
         

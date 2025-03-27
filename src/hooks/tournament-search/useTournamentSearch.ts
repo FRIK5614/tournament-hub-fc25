@@ -18,6 +18,26 @@ export const useTournamentSearch = () => {
   const [cleanupFunction, setCleanupFunction] = useState<(() => void) | null>(null);
   const cleanupFunctionRef = useRef(cleanupFunction);
 
+  // Получить и сохранить id текущего пользователя
+  useEffect(() => {
+    const getCurrentUserId = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error || !data?.user) {
+          console.error("[TOURNAMENT-UI] Error getting user:", error);
+          return;
+        }
+        
+        dispatch({ type: 'SET_CURRENT_USER_ID', payload: data.user.id });
+        console.log("[TOURNAMENT-UI] Current user ID set:", data.user.id);
+      } catch (err) {
+        console.error("[TOURNAMENT-UI] Error in getCurrentUserId:", err);
+      }
+    };
+    
+    getCurrentUserId();
+  }, []);
+
   // Update the ref whenever cleanupFunction changes
   useEffect(() => {
     cleanupFunctionRef.current = cleanupFunction;
@@ -141,6 +161,7 @@ export const useTournamentSearch = () => {
     tournamentCreationStatus: state.tournamentCreationStatus || '',
     isCreatingTournament: state.isCreatingTournament,
     tournamentId: state.tournamentId,
+    currentUserId: state.currentUserId,
     handleStartSearch,
     handleCancelSearch,
     handleReadyCheck,

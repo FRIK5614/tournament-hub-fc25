@@ -6,6 +6,13 @@ import { supabase } from "@/integrations/supabase/client";
  */
 export const createTournamentViaRPC = async (lobbyId: string) => {
   try {
+    // Проверяем авторизацию
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user) {
+      console.error("[TOURNAMENT] Authentication error:", authError);
+      throw new Error("Убедитесь, что вы авторизованы для создания турнира");
+    }
+
     // First check if tournament already exists
     const { data: existingLobby } = await supabase
       .from('tournament_lobbies')
@@ -27,13 +34,6 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
         .eq('id', lobbyId);
     }
     
-    // Verify authentication before creating tournament
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
-      console.error("[TOURNAMENT] Authentication error:", authError);
-      throw new Error("Убедитесь, что вы авторизованы для создания турнира");
-    }
-    
     console.log(`[TOURNAMENT] Attempting to create tournament via RPC as user ${authData.user.id}`);
     
     // Before creating, double-check the ready status of all participants
@@ -41,7 +41,7 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
       .from('lobby_participants')
       .select('user_id, is_ready, status')
       .eq('lobby_id', lobbyId)
-      .in('status', ['ready', 'searching']);
+      .in('status', ['ready']);
       
     if (participantsCheckError) {
       console.error("[TOURNAMENT] Error checking participants:", participantsCheckError);
@@ -53,12 +53,18 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
-    const readyStatusCount = participants.filter(p => p.status === 'ready').length;
     
-    console.log(`[TOURNAMENT] Ready count: ${readyCount}, Ready status count: ${readyStatusCount}`);
+    console.log(`[TOURNAMENT] Ready count: ${readyCount}/4, Total participants: ${participants.length}`);
     
-    if (readyCount < 4 || readyStatusCount < 4) {
-      throw new Error(`Не все игроки подтвердили готовность: ready=${readyCount}/4, status ready=${readyStatusCount}/4`);
+    if (readyCount < 4) {
+      throw new Error(`Не все игроки подтвердили готовность: ready=${readyCount}/4`);
+    }
+    
+    // Защита от RLS ошибок - проверяем, что текущий пользователь является участником лобби
+    const isUserPartOfLobby = participants.some(p => p.user_id === authData.user.id);
+    if (!isUserPartOfLobby) {
+      console.error("[TOURNAMENT] Current user is not part of the lobby - possible RLS violation");
+      throw new Error("У вас нет прав для создания турнира в этом лобби");
     }
     
     // Try to create tournament using RPC (which should handle permissions)
@@ -72,6 +78,8 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
         console.error("[TOURNAMENT] RPC error details:", rpcError);
         if (rpcError.code === "42501") {
           console.error("[TOURNAMENT] Permission denied - RLS violation. User lacks permission to insert into tournaments table.");
+          // Ошибка RLS - попробуем ручной метод
+          throw new Error("Ошибка разрешений при создании турнира. Пробуем другой способ.");
         }
         throw rpcError;
       }
@@ -106,6 +114,13 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
  */
 export const createTournamentManually = async (lobbyId: string) => {
   try {
+    // Проверяем авторизацию
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user) {
+      console.error("[TOURNAMENT] Authentication error:", authError);
+      throw new Error("Убедитесь, что вы авторизованы для создания турнира");
+    }
+
     // First check if tournament already exists
     const { data: existingLobby } = await supabase
       .from('tournament_lobbies')
@@ -127,13 +142,6 @@ export const createTournamentManually = async (lobbyId: string) => {
         .eq('id', lobbyId);
     }
     
-    // Verify authentication before creating tournament
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
-      console.error("[TOURNAMENT] Authentication error:", authError);
-      throw new Error("Убедитесь, что вы авторизованы для создания турнира");
-    }
-    
     console.log(`[TOURNAMENT] Creating tournament manually as user ${authData.user.id}`);
     
     // Before creating, double-check the ready status of all participants
@@ -153,24 +161,32 @@ export const createTournamentManually = async (lobbyId: string) => {
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
-    const readyStatusCount = participants.filter(p => p.status === 'ready').length;
     
-    console.log(`[TOURNAMENT] Manual creation - Ready count: ${readyCount}, Ready status count: ${readyStatusCount}`);
+    console.log(`[TOURNAMENT] Manual creation - Ready count: ${readyCount}/4, Total participants: ${participants.length}`);
     
-    if (readyCount < 4 || readyStatusCount < 4) {
-      console.error(`[TOURNAMENT] Not all players are ready: ready=${readyCount}/4, status ready=${readyStatusCount}/4`);
+    if (readyCount < 4) {
+      console.error(`[TOURNAMENT] Not all players are ready: ready=${readyCount}/4`);
       participants.forEach(p => {
         console.log(`Player ${p.user_id} - ready: ${p.is_ready}, status: ${p.status}`);
       });
-      throw new Error(`Не все игроки подтвердили готовность: готовы=${readyCount}/4, статус готов=${readyStatusCount}/4`);
+      throw new Error(`Не все игроки подтвердили готовность: готовы=${readyCount}/4`);
+    }
+    
+    // Проверяем, что текущий пользователь является участником лобби (защита от RLS ошибок)
+    const isUserPartOfLobby = participants.some(p => p.user_id === authData.user.id);
+    if (!isUserPartOfLobby) {
+      console.error("[TOURNAMENT] Current user is not part of the lobby - possible RLS violation");
+      throw new Error("У вас нет прав для создания турнира в этом лобби");
     }
     
     console.log(`[TOURNAMENT] Creating tournament with ${participants.length} participants`);
     
     // Try with different approaches to handle potential RLS issues
     try {
-      // First attempt: Direct insert
+      // First attempt: Direct insert with auth.uid() validation
       console.log("[TOURNAMENT] Attempting direct tournament insert");
+      
+      // Создаем турнир от имени текущего пользователя
       const { data: tournament, error: tournamentError } = await supabase
         .from('tournaments')
         .insert({
@@ -189,7 +205,7 @@ export const createTournamentManually = async (lobbyId: string) => {
         console.error("[TOURNAMENT] Error creating tournament manually:", tournamentError);
         if (tournamentError.code === "42501") {
           console.error("[TOURNAMENT] RLS policy violation - looking for a workaround");
-          throw new Error("Отказано в доступе: RLS policy violation");
+          throw new Error("Отказано в доступе при создании турнира: RLS policy violation");
         }
         throw tournamentError;
       }
@@ -251,11 +267,34 @@ export const createTournamentManually = async (lobbyId: string) => {
     } catch (directInsertError) {
       console.error("[TOURNAMENT] Direct insert approach failed:", directInsertError);
       
-      // Second attempt: Try another method if available
-      // This could be implemented as a fallback if you have another way
-      // to create tournaments that might bypass RLS issues
+      // Если все попытки не удались, перезапускаем RPC функцию как запасной вариант
+      console.log("[TOURNAMENT] Falling back to RPC method as a last resort");
+      try {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('create_matches_for_quick_tournament', {
+          lobby_id: lobbyId
+        });
+        
+        if (rpcError) {
+          console.error("[TOURNAMENT] Final fallback RPC error:", rpcError);
+          throw rpcError;
+        }
+        
+        // Проверяем, был ли создан турнир
+        const { data: finalLobby } = await supabase
+          .from('tournament_lobbies')
+          .select('tournament_id')
+          .eq('id', lobbyId)
+          .maybeSingle();
+          
+        if (finalLobby?.tournament_id) {
+          console.log(`[TOURNAMENT] Tournament created via fallback RPC: ${finalLobby.tournament_id}`);
+          return { tournamentId: finalLobby.tournament_id, created: true };
+        }
+      } catch (rpcFallbackError) {
+        console.error("[TOURNAMENT] RPC fallback also failed:", rpcFallbackError);
+      }
       
-      throw directInsertError; // Re-throw for now since we don't have an alternative
+      throw directInsertError; // Возвращаем исходную ошибку
     }
   } catch (error) {
     console.error("[TOURNAMENT] Error in createTournamentManually:", error);
@@ -314,9 +353,8 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
-    const statusReadyCount = participants.filter(p => p.status === 'ready').length;
     
-    console.log(`[TOURNAMENT] Ready check stats - is_ready: ${readyCount}/4, status 'ready': ${statusReadyCount}/4`);
+    console.log(`[TOURNAMENT] Ready check stats - is_ready: ${readyCount}/4, participants: ${participants.length}`);
     
     participants.forEach(p => {
       console.log(`[TOURNAMENT] Player ${p.user_id}: is_ready=${p.is_ready}, status=${p.status}`);
@@ -326,6 +364,13 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
       throw new Error(`Не все игроки готовы: ${readyCount}/4`);
     }
     
+    // Проверяем, что текущий пользователь является участником лобби (защита от RLS ошибок)
+    const isUserPartOfLobby = participants.some(p => p.user_id === authData.user.id);
+    if (!isUserPartOfLobby) {
+      console.error("[TOURNAMENT] Current user is not part of the lobby - possible RLS violation");
+      throw new Error("У вас нет прав для создания турнира в этом лобби");
+    }
+
     // Try RPC first
     try {
       console.log(`[TOURNAMENT] Attempting to create tournament via RPC for lobby ${lobbyId}`);

@@ -33,9 +33,16 @@ export const useReadyCheck = (
   // Исправление десинхронизации состояний игроков и лобби при начале проверки готовности
   useEffect(() => {
     if (state.readyCheckActive && state.lobbyId && state.currentUserId) {
-      const updateLobbyState = async () => {
+      const syncLobbyState = async () => {
         try {
-          // Проверяем статус текущего игрока
+          // Проверяем авторизацию пользователя
+          const { data: authData, error: authError } = await supabase.auth.getUser();
+          if (authError || !authData?.user) {
+            console.error("[TOURNAMENT-UI] Authentication error:", authError);
+            return;
+          }
+
+          // Проверяем и исправляем статус текущего игрока
           const { data: currentPlayer, error: playerError } = await supabase
             .from('lobby_participants')
             .select('status, is_ready')
@@ -61,7 +68,7 @@ export const useReadyCheck = (
           // Проверяем и исправляем максимальное количество игроков в лобби
           const { data: lobby, error: lobbyError } = await supabase
             .from('tournament_lobbies')
-            .select('max_players, status')
+            .select('max_players, status, current_players')
             .eq('id', state.lobbyId)
             .maybeSingle();
             
@@ -73,10 +80,12 @@ export const useReadyCheck = (
           if (lobby) {
             // Комплексное исправление лобби
             const updates: Record<string, any> = {};
+            let needsUpdate = false;
             
             if (lobby.max_players !== 4) {
               console.log("[TOURNAMENT-UI] Fixing lobby max_players to 4");
               updates.max_players = 4;
+              needsUpdate = true;
             }
             
             // Если статус должен быть ready_check при активной проверке готовности
@@ -84,10 +93,22 @@ export const useReadyCheck = (
               console.log("[TOURNAMENT-UI] Fixing lobby status to ready_check");
               updates.status = 'ready_check';
               updates.ready_check_started_at = new Date().toISOString();
+              needsUpdate = true;
+            }
+            
+            // Если игроков меньше 4, но статус ready_check, то сбрасываем статус
+            if (lobby.current_players < 4 && lobby.status === 'ready_check') {
+              console.log("[TOURNAMENT-UI] Not enough players, resetting ready_check to waiting");
+              updates.status = 'waiting';
+              updates.ready_check_started_at = null;
+              needsUpdate = true;
+              
+              // Сбрасываем флаг активной проверки готовности локально
+              dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
             }
             
             // Применяем обновления, если они есть
-            if (Object.keys(updates).length > 0) {
+            if (needsUpdate) {
               await supabase
                 .from('tournament_lobbies')
                 .update(updates)
@@ -99,9 +120,9 @@ export const useReadyCheck = (
         }
       };
       
-      updateLobbyState();
+      syncLobbyState();
     }
-  }, [state.readyCheckActive, state.lobbyId, state.currentUserId]);
+  }, [state.readyCheckActive, state.lobbyId, state.currentUserId, dispatch]);
 
   // Периодическая проверка, все ли игроки готовы
   useEffect(() => {
@@ -138,6 +159,29 @@ export const useReadyCheck = (
         if (lobby?.tournament_id && !state.tournamentId) {
           console.log(`[TOURNAMENT-UI] Found existing tournament ${lobby.tournament_id}`);
           dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
+          return;
+        }
+          
+        // Проверяем количество игроков
+        if (!lobby || lobby.current_players < 4) {
+          console.log(`[TOURNAMENT-UI] Not enough players (${lobby?.current_players || 0}/4)`);
+          
+          // Если лобби в статусе ready_check, но игроков меньше 4, сбрасываем статус
+          if (lobby && lobby.status === 'ready_check') {
+            console.log("[TOURNAMENT-UI] Reverting ready_check to waiting due to player count");
+            await supabase
+              .from('tournament_lobbies')
+              .update({ 
+                status: 'waiting', 
+                ready_check_started_at: null,
+                current_players: lobby.current_players
+              })
+              .eq('id', state.lobbyId);
+              
+            // Сбрасываем флаг активной проверки готовности
+            dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+          }
+          
           return;
         }
           
@@ -180,7 +224,39 @@ export const useReadyCheck = (
           }
           
           const totalParticipants = participants?.length || 0;
-          const readyParticipants = participants?.filter(p => p.is_ready).length || 0;
+          
+          // Важно: игроки могут быть is_ready=true, но иметь статус 'searching'
+          // Исправляем это несоответствие
+          for (const participant of participants || []) {
+            if (participant.is_ready && participant.status === 'searching') {
+              console.log(`[TOURNAMENT-UI] Fixing status for ready player ${participant.user_id}`);
+              await supabase
+                .from('lobby_participants')
+                .update({ status: 'ready' })
+                .eq('lobby_id', state.lobbyId)
+                .eq('user_id', participant.user_id)
+                .eq('is_ready', true);
+            }
+          }
+          
+          // После исправлений снова получаем список игроков
+          const { data: updatedParticipants } = await supabase
+            .from('lobby_participants')
+            .select('user_id, is_ready, status')
+            .eq('lobby_id', state.lobbyId)
+            .in('status', ['ready', 'searching']);
+            
+          const readyParticipants = (updatedParticipants || [])
+            .filter(p => p.is_ready && p.status === 'ready').length;
+          
+          // Обновляем список готовых игроков в состоянии
+          const readyPlayerIds = (updatedParticipants || [])
+            .filter(p => p.is_ready)
+            .map(p => p.user_id);
+            
+          if (JSON.stringify(readyPlayerIds) !== JSON.stringify(state.readyPlayers)) {
+            dispatch({ type: 'SET_READY_PLAYERS', payload: readyPlayerIds });
+          }
           
           console.log(`[TOURNAMENT-UI] Participants: ${totalParticipants}/4, Ready: ${readyParticipants}/4`);
           
@@ -273,7 +349,7 @@ export const useReadyCheck = (
             // Сначала проверяем, что турнир еще не существует
             const { data: lobby, error: lobbyError } = await supabase
               .from('tournament_lobbies')
-              .select('tournament_id, max_players, status')
+              .select('tournament_id, max_players, status, current_players')
               .eq('id', state.lobbyId)
               .maybeSingle();
               
@@ -285,6 +361,14 @@ export const useReadyCheck = (
             if (lobby?.tournament_id) {
               console.log(`[TOURNAMENT-UI] Tournament already exists on countdown completion: ${lobby.tournament_id}`);
               dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
+            } else if (lobby?.current_players < 4) {
+              console.log(`[TOURNAMENT-UI] Not enough players (${lobby.current_players}/4), cancelling tournament creation`);
+              toast({
+                title: "Недостаточно игроков",
+                description: `В лобби только ${lobby.current_players} из 4 игроков. Поиск отменен.`,
+                variant: "destructive",
+              });
+              await handleCancelSearch();
             } else {
               // Исправляем параметры лобби, если нужно
               const updates: Record<string, any> = {};

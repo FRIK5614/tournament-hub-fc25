@@ -2,7 +2,14 @@
 // Re-export all tournament-related services from a single file
 
 // Export utils with more specific naming
-export * from './utils';
+export { 
+  MAX_RETRIES,
+  RETRY_DELAY, 
+  delay, 
+  withRetry,
+  updateLobbyPlayerCount as updateTournamentLobbyPlayerCount,
+  cleanupStaleLobbies
+} from './utils';
 
 // Export lobby services 
 export * from './lobby';

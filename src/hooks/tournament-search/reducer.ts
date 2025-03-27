@@ -15,6 +15,7 @@ export type TournamentSearchAction =
   | { type: 'SET_CREATING_TOURNAMENT'; payload: boolean }
   | { type: 'SET_TOURNAMENT_ID'; payload: string }
   | { type: 'SET_SEARCH_ATTEMPTS'; payload: number }
+  | { type: 'SET_CREATION_ATTEMPTS'; payload: number }
   | { type: 'TRIGGER_TOURNAMENT_CHECK'; payload: boolean }
   | { type: 'RESET_SEARCH' };
 
@@ -31,6 +32,7 @@ export const initialState: TournamentSearchState = {
   isCreatingTournament: false,
   tournamentId: null,
   searchAttempts: 0,
+  creationAttempts: 0,
   checkTournamentTrigger: false
 };
 
@@ -68,6 +70,8 @@ export const tournamentSearchReducer = (
       return { ...state, tournamentId: action.payload };
     case 'SET_SEARCH_ATTEMPTS':
       return { ...state, searchAttempts: action.payload };
+    case 'SET_CREATION_ATTEMPTS':
+      return { ...state, creationAttempts: action.payload };
     case 'TRIGGER_TOURNAMENT_CHECK':
       return { ...state, checkTournamentTrigger: action.payload };
     case 'RESET_SEARCH':

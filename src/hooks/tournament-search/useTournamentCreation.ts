@@ -193,6 +193,7 @@ export function useTournamentCreation(
         
         // Increment creation attempts
         creationAttemptsRef.current += 1;
+        dispatch({ type: 'SET_CREATION_ATTEMPTS', payload: creationAttemptsRef.current });
         
         if (creationAttemptsRef.current >= maxCreationAttempts) {
           dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'error' });

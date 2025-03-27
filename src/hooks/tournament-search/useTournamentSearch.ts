@@ -9,6 +9,7 @@ import { usePollingRefresh } from './usePollingRefresh';
 import { useReadyCheck } from './useReadyCheck';
 import { useSearchActions } from './useSearchActions';
 import { supabase } from "@/integrations/supabase/client";
+import { updateLobbyPlayerCount } from './utils';
 
 export const useTournamentSearch = (): UseTournamentSearchResult => {
   const [state, dispatch] = useReducer(tournamentSearchReducer, initialState);
@@ -103,6 +104,9 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
             console.log("[TOURNAMENT-UI] Updated participants from 'searching' to 'ready' status in ready check mode");
           }
           
+          // Update the lobby player count to ensure accuracy
+          await updateLobbyPlayerCount(state.lobbyId);
+          
           // Fetch updated participants to ensure UI is in sync
           await refreshLobbyData(state.lobbyId);
         } catch (err) {
@@ -110,7 +114,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         }
       };
       
-      // Run immediately and then every 2 seconds (more frequent than before)
+      // Run immediately and then every 2 seconds
       syncLobbyParticipantStatuses();
       const intervalId = setInterval(syncLobbyParticipantStatuses, 2000);
       
@@ -125,7 +129,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         try {
           const { data: lobby, error } = await supabase
             .from('tournament_lobbies')
-            .select('status, current_players')
+            .select('status, current_players, tournament_id')
             .eq('id', state.lobbyId)
             .single();
             
@@ -134,30 +138,32 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
             return;
           }
           
+          // If tournament exists, update state
+          if (lobby.tournament_id && !state.tournamentId) {
+            console.log(`[TOURNAMENT-UI] Found tournament ID during status check: ${lobby.tournament_id}`);
+            dispatch({ type: 'SET_TOURNAMENT_ID', payload: lobby.tournament_id });
+          }
+          
           if (lobby.status === 'ready_check') {
             console.log('[TOURNAMENT-UI] Detected ready_check status during polling');
             dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
             dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });
             
             // Update all searching players to ready status
-            const { error: updateError } = await supabase
+            await supabase
               .from('lobby_participants')
               .update({ status: 'ready' })
               .eq('lobby_id', state.lobbyId)
               .eq('status', 'searching');
               
-            if (updateError) {
-              console.error("[TOURNAMENT-UI] Error updating participants to ready status:", updateError);
-            }
-            
             await refreshLobbyData(state.lobbyId);
           }
           
           if (lobby.current_players === 4 && lobby.status === 'waiting') {
             console.log('[TOURNAMENT-UI] Lobby has 4 players but is still in waiting status, triggering ready check');
             
-            // If we have 4 players but status is still 'waiting', try to update it
-            const { error: updateError } = await supabase
+            // Try to update it to ready_check
+            await supabase
               .from('tournament_lobbies')
               .update({ 
                 status: 'ready_check', 
@@ -167,15 +173,13 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
               .eq('status', 'waiting')
               .eq('current_players', 4);
               
-            if (updateError) {
-              console.error("[TOURNAMENT-UI] Error updating lobby to ready_check:", updateError);
-            } else {
-              console.log('[TOURNAMENT-UI] Successfully updated lobby to ready_check');
-              dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
-              dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });
-              await refreshLobbyData(state.lobbyId);
-            }
+            dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
+            dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });
+            await refreshLobbyData(state.lobbyId);
           }
+          
+          // Update the lobby player count to ensure accuracy
+          await updateLobbyPlayerCount(state.lobbyId);
         } catch (err) {
           console.error("[TOURNAMENT-UI] Error in checkLobbyStatus:", err);
         }
@@ -187,18 +191,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       
       return () => clearInterval(intervalId);
     }
-  }, [state.isSearching, state.lobbyId, state.readyCheckActive, refreshLobbyData, dispatch]);
-
-  // Debug logging for state changes
-  useEffect(() => {
-    console.log("[TOURNAMENT-UI] State updated:", {
-      readyPlayers: state.readyPlayers,
-      participants: state.lobbyParticipants.map(p => ({ id: p.user_id, ready: p.is_ready, status: p.status })),
-      readyCheckActive: state.readyCheckActive,
-      lobbyId: state.lobbyId,
-      isSearching: state.isSearching
-    });
-  }, [state.readyPlayers, state.lobbyParticipants, state.readyCheckActive, state.lobbyId, state.isSearching]);
+  }, [state.isSearching, state.lobbyId, state.readyCheckActive, state.tournamentId, refreshLobbyData, dispatch]);
 
   // Effect to handle cleanup when component unmounts
   useEffect(() => {

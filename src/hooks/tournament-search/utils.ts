@@ -98,7 +98,7 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
  */
 export const enrichParticipantsWithProfiles = async (
   participants: any[]
-): Promise<LobbyParticipant[]> => {
+): Promise<any[]> => {
   if (!participants.length) {
     return [];
   }
@@ -155,4 +155,37 @@ export const parseLobbyParticipants = (data: any[]): LobbyParticipant[] => {
     is_ready: item.is_ready || false,
     profile: item.profile || null
   }));
+};
+
+/**
+ * Update lobby player count to ensure accuracy
+ */
+export const updateLobbyPlayerCount = async (lobbyId: string): Promise<void> => {
+  if (!lobbyId) return;
+  
+  try {
+    // Count active participants
+    const { data, error } = await supabase
+      .from('lobby_participants')
+      .select('id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+      
+    if (error) {
+      console.error('[TOURNAMENT-UI] Error counting lobby participants:', error);
+      return;
+    }
+    
+    const count = data?.length || 0;
+    
+    // Update lobby current_players count
+    await supabase
+      .from('tournament_lobbies')
+      .update({ current_players: count })
+      .eq('id', lobbyId);
+      
+    console.log(`[TOURNAMENT-UI] Updated lobby ${lobbyId} player count to ${count}`);
+  } catch (error) {
+    console.error('[TOURNAMENT-UI] Error updating lobby player count:', error);
+  }
 };

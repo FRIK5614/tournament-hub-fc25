@@ -1,23 +1,75 @@
 
 import { supabase } from "@/integrations/supabase/client";
-import { withRetry, cleanupStaleLobbyParticipation, updateLobbyPlayerCount, delay } from "../utils";
-import { leaveQuickTournament } from "./leaveService";
+import { delay } from "../utils";
 
 // Helper function for debugging errors in different environments
 const logError = (context: string, error: any) => {
-  const isProduction = window.location.hostname !== 'localhost' && 
-                      !window.location.hostname.includes('preview--');
-  
   console.error(`[TOURNAMENT] Error in ${context}:`, error);
   
   // In production, add more detail to help diagnose issues
-  if (isProduction) {
+  if (window.location.hostname !== 'localhost') {
     console.error(`[TOURNAMENT] Error details for ${context}:`, {
       message: error.message,
       name: error.name,
       code: error.code,
       stack: error.stack
     });
+  }
+};
+
+/**
+ * Clean up stale lobby participation to ensure user doesn't have multiple active participations
+ */
+export const cleanupStaleLobbyParticipation = async (userId: string) => {
+  if (!userId) return;
+  
+  try {
+    // Mark all previous participations as 'left'
+    await supabase
+      .from('lobby_participants')
+      .update({ status: 'left' })
+      .eq('user_id', userId)
+      .in('status', ['searching', 'ready']);
+      
+    console.log(`[TOURNAMENT] Cleaned up stale participations for user ${userId}`);
+  } catch (error) {
+    console.error('[TOURNAMENT] Error cleaning up stale participations:', error);
+  }
+};
+
+/**
+ * Update the current player count for a lobby
+ */
+export const updateLobbyPlayerCount = async (lobbyId: string) => {
+  if (!lobbyId) return;
+  
+  try {
+    // Count active participants in lobby
+    const { data: participants, error: countError } = await supabase
+      .from('lobby_participants')
+      .select('id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+      
+    if (countError) {
+      throw countError;
+    }
+    
+    const count = participants?.length || 0;
+    
+    // Update lobby player count
+    const { error: updateError } = await supabase
+      .from('tournament_lobbies')
+      .update({ current_players: count })
+      .eq('id', lobbyId);
+      
+    if (updateError) {
+      throw updateError;
+    }
+    
+    console.log(`[TOURNAMENT] Updated lobby ${lobbyId} player count to ${count}`);
+  } catch (error) {
+    console.error('[TOURNAMENT] Error updating lobby player count:', error);
   }
 };
 
@@ -37,152 +89,45 @@ export const searchForQuickTournament = async () => {
     // First, clean up any stale lobbies for this user
     await cleanupStaleLobbyParticipation(user.user.id);
     
-    // Check if the user is already in an active lobby
-    const { data: existingParticipation, error: existingError } = await supabase
-      .from('lobby_participants')
-      .select('id, lobby_id, status, is_ready')
-      .eq('user_id', user.user.id)
-      .in('status', ['searching', 'ready'])
-      .maybeSingle();
+    // Try to find or create a lobby with retry
+    const findLobbyWithRetry = async (maxRetries = 2): Promise<string> => {
+      let retries = 0;
       
-    if (existingError) {
-      logError("checking existing participation", existingError);
-    }
-      
-    if (existingParticipation) {
-      console.log(`[TOURNAMENT] User ${user.user.id} is already in lobby ${existingParticipation.lobby_id} with status ${existingParticipation.status}`);
-      
-      // Check if the lobby is still valid
-      const { data: lobby, error: lobbyError } = await supabase
-        .from('tournament_lobbies')
-        .select('id, status, current_players, tournament_id, created_at')
-        .eq('id', existingParticipation.lobby_id)
-        .maybeSingle();
-        
-      if (lobbyError) {
-        logError("checking existing lobby", lobbyError);
-      }
-        
-      if (!lobbyError && lobby) {
-        // Check if the lobby is too old (more than 15 minutes)
-        const lobbyCreatedAt = new Date(lobby.created_at);
-        const timeElapsed = Date.now() - lobbyCreatedAt.getTime();
-        const isLobbyStale = timeElapsed > 15 * 60 * 1000; // 15 minutes
-        
-        if (isLobbyStale) {
-          console.log(`[TOURNAMENT] Lobby ${existingParticipation.lobby_id} is stale. Leaving and finding a new one.`);
-          await leaveQuickTournament(existingParticipation.lobby_id);
-        } 
-        // If the lobby has a tournament, redirect to it
-        else if (lobby.tournament_id) {
-          console.log(`[TOURNAMENT] Lobby ${existingParticipation.lobby_id} has an active tournament ${lobby.tournament_id}`);
-          return { lobbyId: existingParticipation.lobby_id };
-        }
-        // If the lobby is in ready_check state, ensure player status is set to 'ready'
-        else if (lobby.status === 'ready_check') {
-          console.log(`[TOURNAMENT] Lobby ${existingParticipation.lobby_id} is in ready_check state`);
+      while (retries <= maxRetries) {
+        try {
+          console.log(`[TOURNAMENT] Attempt ${retries + 1} to find/create lobby`);
           
-          // Ensure player's status is correct for ready check
-          if (existingParticipation.status !== 'ready') {
-            await supabase
-              .from('lobby_participants')
-              .update({ status: 'ready', is_ready: existingParticipation.is_ready })
-              .eq('id', existingParticipation.id);
-              
-            console.log(`[TOURNAMENT] Updated player status to 'ready' for ready check`);
+          // Call RPC function to match players
+          const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
+          
+          if (error) {
+            console.error(`[TOURNAMENT] Error on attempt ${retries + 1}:`, error);
+            throw error;
           }
           
-          // Update the lobby's player count for accuracy
-          await updateLobbyPlayerCount(existingParticipation.lobby_id);
-          
-          return { lobbyId: existingParticipation.lobby_id };
-        }
-        // If the lobby is in waiting state, return to it
-        else if (lobby.status === 'waiting') {
-          console.log(`[TOURNAMENT] Returning to existing waiting lobby ${existingParticipation.lobby_id}`);
-          
-          // Update the lobby's player count for accuracy
-          await updateLobbyPlayerCount(existingParticipation.lobby_id);
-          
-          return { lobbyId: existingParticipation.lobby_id };
-        } else {
-          console.log(`[TOURNAMENT] Previous lobby is invalid. Marking player as 'left'.`);
-          // Mark the player as having left this lobby
-          await supabase
-            .from('lobby_participants')
-            .update({ status: 'left' })
-            .eq('id', existingParticipation.id);
-            
-          // Update the lobby player count
-          await updateLobbyPlayerCount(existingParticipation.lobby_id);
-        }
-      } else {
-        console.log(`[TOURNAMENT] Previous lobby no longer exists. Cleaning up.`);
-        // Mark the player as having left since the lobby doesn't exist
-        await supabase
-          .from('lobby_participants')
-          .update({ status: 'left' })
-          .eq('id', existingParticipation.id);
-      }
-    }
-    
-    // Create a new lobby or find an existing one with retry logic
-    const findLobby = async (retries = 2): Promise<string> => {
-      try {
-        console.log("[TOURNAMENT] Calling match_players_for_quick_tournament function");
-        
-        // Call RPC function without timestamp parameters
-        const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
-        
-        if (error) {
-          logError("match_players_for_quick_tournament", error);
-          throw error;
-        }
-        
-        if (!data) {
-          console.error("[TOURNAMENT] No lobby ID returned from match_players_for_quick_tournament");
-          throw new Error("Сервер не вернул ID лобби. Пожалуйста, попробуйте снова.");
-        }
-        
-        // After getting a lobby ID, explicitly check if it has reached 4 players
-        // and should trigger a ready check
-        const { data: lobbyData, error: lobbyError } = await supabase
-          .from('tournament_lobbies')
-          .select('id, current_players, status')
-          .eq('id', data)
-          .single();
-          
-        if (!lobbyError && lobbyData && lobbyData.current_players === 4 && lobbyData.status === 'waiting') {
-          console.log(`[TOURNAMENT] Lobby ${data} has reached 4 players, updating to ready_check`);
-          
-          // Update the lobby status to ready_check
-          const { error: updateError } = await supabase
-            .from('tournament_lobbies')
-            .update({ 
-              status: 'ready_check',
-              ready_check_started_at: new Date().toISOString()
-            })
-            .eq('id', data)
-            .eq('current_players', 4);
-            
-          if (updateError) {
-            console.error("[TOURNAMENT] Error updating lobby to ready_check:", updateError);
+          if (!data) {
+            throw new Error("Сервер не вернул ID лобби");
           }
-        }
-        
-        return data;
-      } catch (error) {
-        if (retries > 0) {
-          console.log(`[TOURNAMENT] Retrying match_players call, ${retries} retries left`);
+          
+          return data;
+        } catch (err) {
+          retries++;
+          
+          if (retries > maxRetries) {
+            throw err;
+          }
+          
+          // Wait before retrying
+          console.log(`[TOURNAMENT] Retrying in 1 second (${retries}/${maxRetries})`);
           await delay(1000);
-          return findLobby(retries - 1);
         }
-        throw error;
       }
+      
+      throw new Error("Exceeded maximum retries");
     };
     
     // Try to find or create a lobby
-    const lobbyId = await findLobby();
+    const lobbyId = await findLobbyWithRetry();
     console.log(`[TOURNAMENT] User ${user.user.id} matched to lobby: ${lobbyId}`);
     
     // Get lobby status
@@ -211,23 +156,19 @@ export const searchForQuickTournament = async () => {
     console.log(`[TOURNAMENT] Lobby ${lobbyId} has status: ${lobbyData?.status}, setting initial status to: ${initialStatus}`);
     
     // Check if the user is already in this lobby
-    const { data: existingParticipant, error: checkError } = await supabase
+    const { data: existingParticipant } = await supabase
       .from('lobby_participants')
       .select('id, status, is_ready')
       .eq('lobby_id', lobbyId)
       .eq('user_id', user.user.id)
       .maybeSingle();
     
-    if (checkError) {
-      logError("checking participant", checkError);
-    }
-    
     if (existingParticipant) {
       console.log(`[TOURNAMENT] User ${user.user.id} already in lobby ${lobbyId} with status: ${existingParticipant.status}`);
       
       // If the participant exists but status is incorrect, update their status
       if (existingParticipant.status !== initialStatus) {
-        const { error: updateError } = await supabase
+        await supabase
           .from('lobby_participants')
           .update({
             status: initialStatus,
@@ -235,20 +176,13 @@ export const searchForQuickTournament = async () => {
           })
           .eq('id', existingParticipant.id);
           
-        if (updateError) {
-          logError("updating participant status", updateError);
-        } else {
-          console.log(`[TOURNAMENT] Updated participant ${existingParticipant.id} status to '${initialStatus}'`);
-        }
+        console.log(`[TOURNAMENT] Updated participant ${existingParticipant.id} status to '${initialStatus}'`);
       }
     } else {
       console.log(`[TOURNAMENT] Adding user ${user.user.id} to lobby ${lobbyId}`);
       
-      // First, ensure player doesn't have other active participations
-      await cleanupStaleLobbyParticipation(user.user.id);
-      
       // Add player to the new lobby
-      const { error: joinError } = await supabase
+      await supabase
         .from('lobby_participants')
         .insert({
           lobby_id: lobbyId,
@@ -256,25 +190,16 @@ export const searchForQuickTournament = async () => {
           status: initialStatus,
           is_ready: false
         });
-      
-      if (joinError) {
-        logError("joining lobby", joinError);
-        throw new Error("Не удалось присоединиться к турниру. Пожалуйста, попробуйте снова.");
-      }
     }
     
     // Explicitly check if lobby is in ready_check status and ensure all participants have status = 'ready'
     if (lobbyData?.status === 'ready_check') {
       console.log(`[TOURNAMENT] Synchronizing all participants to 'ready' status for ready check`);
-      const { error: syncError } = await supabase
+      await supabase
         .from('lobby_participants')
         .update({ status: 'ready' })
         .eq('lobby_id', lobbyId)
         .eq('status', 'searching');
-        
-      if (syncError) {
-        logError("synchronizing participants to ready status", syncError);
-      }
     }
     
     // Update the lobby's current_players count
@@ -283,6 +208,37 @@ export const searchForQuickTournament = async () => {
     return { lobbyId };
   } catch (error) {
     logError("searchForQuickTournament", error);
+    throw error;
+  }
+};
+
+/**
+ * Leave a quick tournament lobby
+ */
+export const leaveQuickTournament = async (lobbyId: string) => {
+  try {
+    const { data: user } = await supabase.auth.getUser();
+    
+    if (!user?.user) {
+      throw new Error("Пользователь не авторизован");
+    }
+    
+    console.log(`[TOURNAMENT] User ${user.user.id} leaving lobby ${lobbyId}`);
+    
+    // Mark player as having left
+    await supabase
+      .from('lobby_participants')
+      .update({ status: 'left' })
+      .eq('lobby_id', lobbyId)
+      .eq('user_id', user.user.id);
+      
+    // Update lobby player count
+    await updateLobbyPlayerCount(lobbyId);
+    
+    console.log(`[TOURNAMENT] User ${user.user.id} successfully left lobby ${lobbyId}`);
+    return { success: true };
+  } catch (error) {
+    logError("leaveQuickTournament", error);
     throw error;
   }
 };

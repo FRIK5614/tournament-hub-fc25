@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
 import { updateLobbyPlayerCount as updateLobbyPlayerCountFromUtils } from "@/hooks/tournament-search/utils";
@@ -166,6 +165,24 @@ export const searchForQuickTournament = async () => {
     // Try to find or create a lobby
     const lobbyId = await findLobbyWithRetry();
     console.log(`[TOURNAMENT] User ${user.user.id} matched to lobby: ${lobbyId}`);
+    
+    // First check if user already has a profile
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .eq('id', user.user.id)
+      .maybeSingle();
+      
+    if (profileError || !profileData) {
+      console.log(`[TOURNAMENT] Creating profile for user ${user.user.id}`);
+      // Create a profile if one doesn't exist
+      await supabase
+        .from('profiles')
+        .insert({
+          id: user.user.id,
+          username: user.user.email?.split('@')[0] || `Player-${user.user.id.substring(0, 6)}`
+        });
+    }
     
     // Get lobby status
     const { data: lobbyData, error: lobbyError } = await supabase

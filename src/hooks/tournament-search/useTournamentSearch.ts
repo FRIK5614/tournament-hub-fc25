@@ -59,8 +59,13 @@ export const useTournamentSearch = () => {
       }));
     } catch (error) {
       console.error("Error refreshing lobby data:", error);
+      toast({
+        title: "Ошибка обновления",
+        description: "Не удалось получить актуальные данные лобби. Пожалуйста, попробуйте отменить и начать поиск заново.",
+        variant: "destructive",
+      });
     }
-  }, []);
+  }, [toast]);
   
   const { 
     handleStartSearch, 

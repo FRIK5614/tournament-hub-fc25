@@ -5,6 +5,7 @@ import TournamentIntro from './TournamentIntro';
 import TournamentSearchStatus from './TournamentSearchStatus';
 import ReadyCheck from './ReadyCheck';
 import { useEffect } from 'react';
+import { toast } from '@/hooks/use-toast';
 
 const QuickTournamentSearch = () => {
   const navigate = useNavigate();
@@ -38,13 +39,41 @@ const QuickTournamentSearch = () => {
     });
   }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, tournamentCreationStatus, isCreatingTournament]);
 
+  // Показываем тост с ошибкой, если происходит ошибка поиска
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isSearching || readyCheckActive) {
+        // Пытаемся отменить поиск при закрытии страницы
+        handleCancelSearch();
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isSearching, readyCheckActive, handleCancelSearch]);
+
   return (
     <div className="glass-card p-6">
       <h3 className="text-xl font-semibold mb-4">Быстрый турнир</h3>
       
       {!isSearching && (
         <TournamentIntro 
-          onStartSearch={() => handleStartSearch()} 
+          onStartSearch={() => {
+            try {
+              handleStartSearch();
+            } catch (error) {
+              console.error("Error starting search:", error);
+              toast({
+                title: "Ошибка поиска",
+                description: "Не удалось начать поиск турнира. Попробуйте позже.",
+                variant: "destructive",
+              });
+            }
+          }} 
           isLoading={isLoading} 
         />
       )}

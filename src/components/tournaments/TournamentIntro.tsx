@@ -16,7 +16,7 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
       </p>
       
       <Button 
-        className="bg-green-600 hover:bg-green-700"
+        className="bg-green-600 hover:bg-green-700 w-full"
         onClick={onStartSearch}
         disabled={isLoading}
       >

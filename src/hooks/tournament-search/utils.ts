@@ -52,11 +52,11 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     is_ready: participant.is_ready || false,
     profile: {
       // Use a default profile if the relation has an error or is missing
-      username: participant.profile && 'username' in participant.profile 
-        ? participant.profile.username 
+      username: participant.profile && typeof participant.profile === 'object' && 'username' in participant.profile 
+        ? String(participant.profile.username) 
         : 'Unknown Player',
-      avatar_url: participant.profile && 'avatar_url' in participant.profile 
-        ? participant.profile.avatar_url 
+      avatar_url: participant.profile && typeof participant.profile === 'object' && 'avatar_url' in participant.profile 
+        ? participant.profile.avatar_url as string | null
         : null
     }
   }));
@@ -74,10 +74,10 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
     is_ready: participant.is_ready || false,
     profile: {
       username: participant.profile && typeof participant.profile === 'object' && 'username' in participant.profile 
-        ? participant.profile.username 
+        ? String(participant.profile.username) 
         : 'Unknown Player',
       avatar_url: participant.profile && typeof participant.profile === 'object' && 'avatar_url' in participant.profile 
-        ? participant.profile.avatar_url 
+        ? participant.profile.avatar_url as string | null
         : null
     }
   }));

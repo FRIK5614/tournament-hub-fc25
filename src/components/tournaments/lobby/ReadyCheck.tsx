@@ -60,17 +60,26 @@ const ReadyCheck = ({
     if (isCountdownExpired || allPlayersReady) {
       if (!tournamentCreationStatus || tournamentCreationStatus === 'waiting') {
         return (
-          <div className="my-2 text-center">
+          <motion.div 
+            className="my-2 text-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
             <div className="text-yellow-500 flex items-center justify-center">
               <Loader2 className="mr-2 animate-spin" size={16} />
               Создание турнира...
             </div>
-          </div>
+          </motion.div>
         );
       }
       
       return (
-        <div className="my-2 text-center">
+        <motion.div 
+          className="my-2 text-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
           {tournamentCreationStatus === 'checking' && (
             <div className="text-yellow-500 flex items-center justify-center">
               <Loader2 className="mr-2 animate-spin" size={16} />
@@ -101,7 +110,7 @@ const ReadyCheck = ({
               Ошибка: недостаточно игроков. Пробуем еще...
             </div>
           )}
-        </div>
+        </motion.div>
       );
     }
     

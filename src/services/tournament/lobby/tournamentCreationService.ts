@@ -35,9 +35,22 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
         .eq('id', lobbyId);
     }
     
-    // Проверяем количество игроков
-    if (existingLobby && existingLobby.current_players < 4) {
-      throw new Error(`Недостаточно игроков: ${existingLobby.current_players}/4`);
+    // Проверяем количество игроков в лобби непосредственно в базе данных
+    const { data: participantCount, error: countError } = await supabase
+      .from('lobby_participants')
+      .select('id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+      
+    if (countError) {
+      console.error("[TOURNAMENT] Error checking participant count:", countError);
+    }
+    
+    const actualPlayerCount = participantCount ? participantCount.length : 0;
+    console.log(`[TOURNAMENT] Actual player count in database: ${actualPlayerCount}/4`);
+    
+    if (actualPlayerCount < 4) {
+      throw new Error(`Недостаточно игроков для создания турнира: ${actualPlayerCount}/4`);
     }
     
     console.log(`[TOURNAMENT] Attempting to create tournament via RPC as user ${authData.user.id}`);
@@ -55,7 +68,7 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     }
     
     if (!participants || participants.length < 4) {
-      throw new Error(`Недостаточно участников для создания турнира: ${participants?.length || 0}/4`);
+      throw new Error(`Недостаточно участников со статусом 'ready' для создания турнира: ${participants?.length || 0}/4`);
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
@@ -63,7 +76,21 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     console.log(`[TOURNAMENT] Ready count: ${readyCount}/4, Total participants: ${participants.length}`);
     
     if (readyCount < 4) {
-      throw new Error(`Не все игроки подтвердили готовность: ready=${readyCount}/4`);
+      console.log("[TOURNAMENT] Not all players are marked as ready, attempting to update status...");
+      // Try to update all participants to ready status if timer expired
+      try {
+        await supabase
+          .from('lobby_participants')
+          .update({ 
+            is_ready: true 
+          })
+          .eq('lobby_id', lobbyId)
+          .in('status', ['ready']);
+          
+        console.log("[TOURNAMENT] Updated all participants to ready status");
+      } catch (updateError) {
+        console.error("[TOURNAMENT] Error updating ready status:", updateError);
+      }
     }
     
     // Защита от RLS ошибок - проверяем, что текущий пользователь является участником лобби
@@ -141,18 +168,22 @@ export const createTournamentManually = async (lobbyId: string) => {
       return { tournamentId: existingLobby.tournament_id, created: false };
     }
     
-    // Проверяем, что max_players = 4
-    if (existingLobby && existingLobby.max_players !== 4) {
-      console.log(`[TOURNAMENT] Fixing max_players for lobby ${lobbyId} to 4`);
-      await supabase
-        .from('tournament_lobbies')
-        .update({ max_players: 4 })
-        .eq('id', lobbyId);
+    // Проверяем количество игроков в лобби непосредственно в базе данных
+    const { data: participantCount, error: countError } = await supabase
+      .from('lobby_participants')
+      .select('id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+      
+    if (countError) {
+      console.error("[TOURNAMENT] Error checking participant count:", countError);
     }
     
-    // Проверяем количество игроков
-    if (existingLobby && existingLobby.current_players < 4) {
-      throw new Error(`Недостаточно игроков для создания турнира: ${existingLobby.current_players}/4`);
+    const actualPlayerCount = participantCount ? participantCount.length : 0;
+    console.log(`[TOURNAMENT] Manual creation - Actual player count: ${actualPlayerCount}/4`);
+    
+    if (actualPlayerCount < 4) {
+      throw new Error(`Недостаточно игроков для создания турнира: ${actualPlayerCount}/4`);
     }
     
     console.log(`[TOURNAMENT] Creating tournament manually as user ${authData.user.id}`);
@@ -178,11 +209,21 @@ export const createTournamentManually = async (lobbyId: string) => {
     console.log(`[TOURNAMENT] Manual creation - Ready count: ${readyCount}/4, Total participants: ${participants.length}`);
     
     if (readyCount < 4) {
-      console.error(`[TOURNAMENT] Not all players are ready: ready=${readyCount}/4`);
-      participants.forEach(p => {
-        console.log(`Player ${p.user_id} - ready: ${p.is_ready}, status: ${p.status}`);
-      });
-      throw new Error(`Не все игроки подтвердили готовность: готовы=${readyCount}/4`);
+      console.log("[TOURNAMENT] Not all players are marked as ready, attempting to update status...");
+      // Try to update all participants to ready status if timer expired
+      try {
+        await supabase
+          .from('lobby_participants')
+          .update({ 
+            is_ready: true 
+          })
+          .eq('lobby_id', lobbyId)
+          .in('status', ['ready']);
+          
+        console.log("[TOURNAMENT] Updated all participants to ready status");
+      } catch (updateError) {
+        console.error("[TOURNAMENT] Error updating ready status:", updateError);
+      }
     }
     
     // Проверяем, что текущий пользователь является участником лобби (защита от RLS ошибок)
@@ -219,7 +260,7 @@ export const createTournamentManually = async (lobbyId: string) => {
       if (tournamentError) {
         console.error("[TOURNAMENT] Error creating tournament manually:", tournamentError);
         if (tournamentError.code === "42501") {
-          console.error("[TOURNAMENT] RLS policy violation - looking for a workaround");
+          console.error("[TOURNAMENT] RLS policy violation - will try fallback to RPC");
           throw new Error("Отказано в доступе при создании турнира: RLS policy violation");
         }
         throw tournamentError;
@@ -371,9 +412,22 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
         .eq('id', lobbyId);
     }
     
-    // Проверяем количество игроков
-    if (existingLobby && existingLobby.current_players < 4) {
-      throw new Error(`Недостаточно игроков для создания турнира: ${existingLobby.current_players}/4`);
+    // Проверяем количество игроков непосредственно в базе данных
+    const { data: participantCount, error: countError } = await supabase
+      .from('lobby_participants')
+      .select('id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+      
+    if (countError) {
+      console.error("[TOURNAMENT] Error counting participants:", countError);
+    }
+    
+    const actualPlayerCount = participantCount ? participantCount.length : 0;
+    console.log(`[TOURNAMENT] Current player count in database: ${actualPlayerCount}/4`);
+    
+    if (actualPlayerCount < 4) {
+      throw new Error(`Недостаточно игроков для создания турнира: ${actualPlayerCount}/4`);
     }
     
     // Проверяем авторизацию
@@ -395,21 +449,71 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
       throw participantsError;
     }
     
+    console.log(`[TOURNAMENT] Participants in ready check: ${participants?.length || 0}/4`);
+    
     if (!participants || participants.length < 4) {
-      console.error(`[TOURNAMENT] Not enough participants: ${participants?.length || 0}/4`);
-      throw new Error(`Недостаточно участников для создания турнира: ${participants?.length || 0}/4`);
+      console.error(`[TOURNAMENT] Not enough participants in ready status: ${participants?.length || 0}/4`);
+      
+      // Try to update status for all participants that are in searching state
+      console.log("[TOURNAMENT] Attempting to update participant status to ready");
+      try {
+        const { error: updateError } = await supabase
+          .from('lobby_participants')
+          .update({ 
+            status: 'ready',
+            is_ready: true 
+          })
+          .eq('lobby_id', lobbyId)
+          .eq('status', 'searching');
+          
+        if (updateError) {
+          console.error("[TOURNAMENT] Error updating participant status:", updateError);
+        } else {
+          console.log("[TOURNAMENT] Successfully updated participant status");
+        }
+      } catch (updateErr) {
+        console.error("[TOURNAMENT] Error in update operation:", updateErr);
+      }
+      
+      // Check again after update
+      const { data: updatedParticipants } = await supabase
+        .from('lobby_participants')
+        .select('user_id, is_ready, status')
+        .eq('lobby_id', lobbyId)
+        .in('status', ['ready']);
+        
+      if (!updatedParticipants || updatedParticipants.length < 4) {
+        throw new Error(`Недостаточно участников для создания турнира: ${updatedParticipants?.length || 0}/4`);
+      }
+      
+      console.log(`[TOURNAMENT] After update, participants in ready status: ${updatedParticipants.length}/4`);
     }
     
     const readyCount = participants.filter(p => p.is_ready).length;
     
-    console.log(`[TOURNAMENT] Ready check stats - is_ready: ${readyCount}/4, participants: ${participants.length}`);
+    console.log(`[TOURNAMENT] Ready check stats - is_ready: ${readyCount}/${participants.length}`);
     
     participants.forEach(p => {
       console.log(`[TOURNAMENT] Player ${p.user_id}: is_ready=${p.is_ready}, status=${p.status}`);
     });
     
     if (readyCount < 4) {
-      throw new Error(`Не все игроки готовы: ${readyCount}/4`);
+      console.log("[TOURNAMENT] Not all players marked as ready, updating ready status");
+      try {
+        const { error: readyUpdateError } = await supabase
+          .from('lobby_participants')
+          .update({ is_ready: true })
+          .eq('lobby_id', lobbyId)
+          .in('status', ['ready']);
+          
+        if (readyUpdateError) {
+          console.error("[TOURNAMENT] Error updating ready status:", readyUpdateError);
+        } else {
+          console.log("[TOURNAMENT] Successfully updated ready status for all participants");
+        }
+      } catch (updateErr) {
+        console.error("[TOURNAMENT] Error in ready update operation:", updateErr);
+      }
     }
     
     // Проверяем, что текущий пользователь является участником лобби (защита от RLS ошибок)

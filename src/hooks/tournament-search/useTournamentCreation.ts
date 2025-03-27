@@ -190,7 +190,7 @@ export const useTournamentCreation = (
         console.log("[TOURNAMENT-UI] Creating tournament for lobby:", state.lobbyId);
         const result = await createTournamentWithRetry(state.lobbyId);
         
-        if (result.created) { // Fixed: Check result.created instead of result.success
+        if (result.created) {
           console.log(`[TOURNAMENT-UI] Tournament created successfully with ID: ${result.tournamentId}`);
           
           // Double-check if the lobby was properly updated with the tournament_id

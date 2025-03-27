@@ -21,14 +21,19 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     },
     // Increase timeout for longer operations
     fetch: (url, options) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // Increase to 60 second timeout
+      
       return fetch(url, {
         ...options,
-        signal: options?.signal || AbortSignal.timeout(30000), // 30 second timeout
+        signal: controller.signal,
         cache: 'no-cache', // Prevent caching issues
+      }).finally(() => {
+        clearTimeout(timeoutId);
       });
     },
   },
-  // Add auto-retry for failed requests
+  // Add more reasonable timeouts for DB operations
   db: {
     schema: 'public',
   },

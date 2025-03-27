@@ -4,6 +4,7 @@ import { useTournamentSearch } from '@/hooks/useTournamentSearch';
 import TournamentIntro from './TournamentIntro';
 import TournamentSearchStatus from './TournamentSearchStatus';
 import ReadyCheck from './ReadyCheck';
+import { useEffect } from 'react';
 
 const QuickTournamentSearch = () => {
   const navigate = useNavigate();
@@ -21,6 +22,19 @@ const QuickTournamentSearch = () => {
     handleReadyCheck,
     isUserReady
   } = useTournamentSearch();
+
+  // Debug logging
+  useEffect(() => {
+    console.log("[TOURNAMENT-UI] QuickTournamentSearch render state:", {
+      isSearching,
+      readyCheckActive,
+      participantsCount: lobbyParticipants.length,
+      readyPlayersCount: readyPlayers.length,
+      isLoading,
+      tournamentCreationStatus,
+      isCreatingTournament
+    });
+  }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, tournamentCreationStatus, isCreatingTournament]);
 
   return (
     <div className="glass-card p-6">

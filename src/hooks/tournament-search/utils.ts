@@ -71,6 +71,8 @@ export const setupLobbySubscriptions = (
   lobbyId: string, 
   callback: () => void
 ): (() => void) => {
+  console.log(`[TOURNAMENT-UI] Setting up subscriptions for lobby ${lobbyId}`);
+  
   const lobbyChannel = supabase
     .channel('lobby_changes')
     .on('postgres_changes', {
@@ -98,6 +100,7 @@ export const setupLobbySubscriptions = (
     .subscribe();
     
   return () => {
+    console.log(`[TOURNAMENT-UI] Cleaning up subscriptions for lobby ${lobbyId}`);
     supabase.removeChannel(lobbyChannel);
     supabase.removeChannel(lobbyStatusChannel);
   };

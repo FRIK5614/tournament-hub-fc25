@@ -97,6 +97,10 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
       dispatch({ type: 'SET_CURRENT_USER_ID', payload: user.user.id });
 
       const { lobbyId } = await searchForQuickTournament();
+      if (!lobbyId) {
+        throw new Error("Не удалось найти подходящее лобби");
+      }
+      
       dispatch({ type: 'SET_LOBBY_ID', payload: lobbyId });
       
       // Fetch initial lobby status and participants
@@ -112,7 +116,7 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
         cleanupSubscriptionRef.current(); // Clean up existing subscription if any
       }
       
-      cleanupSubscriptionRef.current = setupLobbySubscriptions(lobbyId, () => {
+      const cleanup = setupLobbySubscriptions(lobbyId, () => {
         fetchLobbyStatus(lobbyId).then(status => {
           dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
           fetchLobbyParticipants(lobbyId).then(participants => {
@@ -120,6 +124,8 @@ export const useTournamentSearch = (): UseTournamentSearchResult => {
           });
         });
       });
+      
+      cleanupSubscriptionRef.current = cleanup;
 
       dispatch({ type: 'SET_SEARCHING', payload: true });
       dispatch({ type: 'SET_LOADING', payload: false });

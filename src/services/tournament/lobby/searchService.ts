@@ -50,7 +50,7 @@ export const searchForQuickTournament = async () => {
         // If the lobby has a tournament, redirect to it
         else if (lobby.tournament_id) {
           console.log(`[TOURNAMENT] Lobby ${existingParticipation.lobby_id} has an active tournament ${lobby.tournament_id}`);
-          return existingParticipation.lobby_id;
+          return { lobbyId: existingParticipation.lobby_id };
         }
         // If the lobby is in waiting/ready_check states and no tournament yet, return to it
         else if ((lobby.status === 'waiting' || lobby.status === 'ready_check') && !lobby.tournament_id) {
@@ -67,7 +67,7 @@ export const searchForQuickTournament = async () => {
           // Update the lobby's player count for accuracy
           await updateLobbyPlayerCount(existingParticipation.lobby_id);
           
-          return existingParticipation.lobby_id;
+          return { lobbyId: existingParticipation.lobby_id };
         } else {
           console.log(`[TOURNAMENT] Previous lobby is invalid or has a tournament. Marking player as 'left'.`);
           // Mark the player as having left this lobby
@@ -160,7 +160,7 @@ export const searchForQuickTournament = async () => {
     // Update the lobby's current_players count
     await updateLobbyPlayerCount(lobbyId);
     
-    return lobbyId;
+    return { lobbyId };
   } catch (error) {
     console.error("[TOURNAMENT] Error in searchForQuickTournament:", error);
     throw error;

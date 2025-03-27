@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 // Quick Tournament Functions
@@ -9,30 +8,46 @@ export const searchForQuickTournament = async () => {
     throw new Error("Необходимо авторизоваться для участия в турнирах");
   }
   
-  // Call the function to get or create a lobby
-  const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
-  
-  if (error) {
-    console.error("Ошибка при поиске турнира:", error);
-    throw new Error("Не удалось найти турнир. Пожалуйста, попробуйте снова.");
+  try {
+    // Call the function to get or create a lobby
+    const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
+    
+    if (error) {
+      console.error("Ошибка при поиске турнира:", error);
+      throw new Error("Не удалось найти турнир. Пожалуйста, попробуйте снова.");
+    }
+    
+    // Add the user to the lobby
+    const lobbyId = data;
+    
+    // Check if the user is already in this lobby
+    const { data: existingParticipant } = await supabase
+      .from('lobby_participants')
+      .select('id')
+      .eq('lobby_id', lobbyId)
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+    
+    if (!existingParticipant) {
+      const { error: joinError } = await supabase
+        .from('lobby_participants')
+        .insert({
+          lobby_id: lobbyId,
+          user_id: user.user.id,
+          status: 'searching'
+        });
+      
+      if (joinError) {
+        console.error("Ошибка при присоединении к лобби:", joinError);
+        throw new Error("Не удалось присоединиться к турниру. Пожалуйста, попробуйте снова.");
+      }
+    }
+    
+    return lobbyId;
+  } catch (error) {
+    console.error("Ошибка в searchForQuickTournament:", error);
+    throw error;
   }
-  
-  // Add the user to the lobby
-  const lobbyId = data;
-  const { error: joinError } = await supabase
-    .from('lobby_participants')
-    .insert({
-      lobby_id: lobbyId,
-      user_id: user.user.id,
-      status: 'searching'
-    });
-  
-  if (joinError) {
-    console.error("Ошибка при присоединении к лобби:", joinError);
-    throw new Error("Не удалось присоединиться к турниру. Пожалуйста, попробуйте снова.");
-  }
-  
-  return lobbyId;
 };
 
 export const markUserAsReady = async (lobbyId: string) => {

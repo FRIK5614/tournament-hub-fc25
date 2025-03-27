@@ -13,6 +13,7 @@ const QuickTournamentSearch = () => {
   const [countdownSeconds, setCountdownSeconds] = useState(30);
   const [lobbyParticipants, setLobbyParticipants] = useState<any[]>([]);
   const [readyPlayers, setReadyPlayers] = useState<string[]>([]);
+  const [searchAttempts, setSearchAttempts] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -84,6 +85,17 @@ const QuickTournamentSearch = () => {
     };
   }, [lobbyId, navigate, toast]);
 
+  // Retry search if it fails
+  useEffect(() => {
+    if (isSearching && !lobbyId && searchAttempts > 0) {
+      const retryTimer = setTimeout(() => {
+        handleStartSearch(true);
+      }, 2000);
+      
+      return () => clearTimeout(retryTimer);
+    }
+  }, [isSearching, lobbyId, searchAttempts]);
+
   // Countdown timer for ready check
   useEffect(() => {
     if (!readyCheckActive || countdownSeconds <= 0) return;
@@ -107,29 +119,45 @@ const QuickTournamentSearch = () => {
     }
   }, [countdownSeconds, readyCheckActive, toast]);
 
-  const handleStartSearch = async () => {
+  const handleStartSearch = async (isRetry = false) => {
     try {
       setIsSearching(true);
+      
+      if (!isRetry) {
+        // Only show toast on initial search, not on retries
+        toast({
+          title: "Поиск турнира",
+          description: "Поиск быстрого турнира начат. Ожидание других игроков...",
+          variant: "default",
+        });
+      }
+      
       const newLobbyId = await searchForQuickTournament();
       setLobbyId(newLobbyId);
-      
-      toast({
-        title: "Поиск турнира",
-        description: "Поиск быстрого турнира начат. Ожидание других игроков...",
-        variant: "default",
-      });
+      setSearchAttempts(0); // Reset attempts on success
     } catch (error: any) {
-      toast({
-        title: "Ошибка",
-        description: error.message || "Не удалось начать поиск турнира",
-        variant: "destructive",
-      });
-      setIsSearching(false);
+      console.error("Error searching for tournament:", error);
+      
+      // Only show error toast on first few attempts
+      if (searchAttempts < 3) {
+        toast({
+          title: "Повторная попытка поиска",
+          description: "Возникла проблема при поиске. Пробуем еще раз...",
+          variant: "default",
+        });
+      }
+      
+      // Increment search attempts for retry logic
+      setSearchAttempts(prev => prev + 1);
     }
   };
 
   const handleCancelSearch = async () => {
-    if (!lobbyId) return;
+    if (!lobbyId) {
+      setIsSearching(false);
+      setSearchAttempts(0);
+      return;
+    }
     
     try {
       // Update participant status to 'left'
@@ -145,6 +173,7 @@ const QuickTournamentSearch = () => {
       setIsSearching(false);
       setLobbyId(null);
       setReadyCheckActive(false);
+      setSearchAttempts(0);
       
       toast({
         title: "Поиск отменен",
@@ -199,7 +228,7 @@ const QuickTournamentSearch = () => {
           
           <button 
             className="btn-primary"
-            onClick={handleStartSearch}
+            onClick={() => handleStartSearch()}
           >
             Найти турнир
           </button>

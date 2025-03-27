@@ -34,18 +34,10 @@ export const fetchLobbyStatus = async (lobbyId: string): Promise<LobbyStatus> =>
  */
 export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyParticipant[]> => {
   try {
-    const { data, error } = await supabase
+    // Используем раздельные запросы для участников и профилей
+    const { data: participants, error } = await supabase
       .from('lobby_participants')
-      .select(`
-        id, 
-        user_id, 
-        status, 
-        is_ready,
-        profile:user_id (
-          username,
-          avatar_url
-        )
-      `)
+      .select('id, user_id, status, is_ready')
       .eq('lobby_id', lobbyId)
       .in('status', ['searching', 'ready']);
       
@@ -54,15 +46,41 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       throw error;
     }
     
-    // Преобразуем данные в формат LobbyParticipant, добавляя lobby_id и приводя status к нужному типу
-    return data.map(participant => ({
+    // Преобразуем данные в формат LobbyParticipant с пустым профилем
+    const lobbyParticipants: LobbyParticipant[] = participants.map(participant => ({
       id: participant.id,
       user_id: participant.user_id,
       lobby_id: lobbyId,
-      status: participant.status as LobbyParticipant['status'], // Приведение типа
+      status: participant.status as LobbyParticipant['status'],
       is_ready: participant.is_ready,
-      profile: participant.profile || null
+      profile: {
+        username: `Player-${participant.user_id.substring(0, 6)}`,
+        avatar_url: null
+      }
     }));
+    
+    // Затем попробуем заполнить профили пользователей, если возможно
+    try {
+      for (const participant of lobbyParticipants) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('username, avatar_url')
+          .eq('id', participant.user_id)
+          .maybeSingle();
+        
+        if (profile) {
+          participant.profile = {
+            username: profile.username || `Player-${participant.user_id.substring(0, 6)}`,
+            avatar_url: profile.avatar_url
+          };
+        }
+      }
+    } catch (profileError) {
+      console.error("[TOURNAMENT-UI] Error fetching profiles:", profileError);
+      // Продолжаем с дефолтными профилями, если не удалось получить реальные
+    }
+    
+    return lobbyParticipants;
   } catch (error) {
     console.error("[TOURNAMENT-UI] Error in fetchLobbyParticipants:", error);
     throw error;

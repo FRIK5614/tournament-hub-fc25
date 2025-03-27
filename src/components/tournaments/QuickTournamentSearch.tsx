@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
@@ -13,8 +14,21 @@ const QuickTournamentSearch = () => {
   const [lobbyParticipants, setLobbyParticipants] = useState<any[]>([]);
   const [readyPlayers, setReadyPlayers] = useState<string[]>([]);
   const [searchAttempts, setSearchAttempts] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Get and store the current user ID on component mount
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user) {
+        setCurrentUserId(data.user.id);
+      }
+    };
+    
+    fetchUser();
+  }, []);
 
   // Subscribe to lobby changes when we have a lobbyId
   useEffect(() => {
@@ -22,13 +36,10 @@ const QuickTournamentSearch = () => {
 
     const fetchLobbyParticipants = async () => {
       try {
-        const { data: user } = await supabase.auth.getUser();
-        if (!user?.user) return;
-        
         // Get the current lobby information with its current player count
         const { data: lobbyData, error: lobbyError } = await supabase
           .from('tournament_lobbies')
-          .select('current_players')
+          .select('current_players, status')
           .eq('id', lobbyId)
           .single();
         
@@ -37,10 +48,17 @@ const QuickTournamentSearch = () => {
           return;
         }
         
-        // Get all participant data
+        if (lobbyData.status === 'ready_check') {
+          setReadyCheckActive(true);
+        }
+        
+        // Get all participants (don't filter by status)
         const { data, error } = await supabase
           .from('lobby_participants')
-          .select('*, profiles:user_id(username, avatar_url)')
+          .select(`
+            *,
+            profiles:user_id(id, username, avatar_url)
+          `)
           .eq('lobby_id', lobbyId)
           .eq('status', 'searching');
         
@@ -177,7 +195,11 @@ const QuickTournamentSearch = () => {
             user_id: user.user.id,
             lobby_id: newLobbyId,
             is_ready: false,
-            profiles: profile
+            profiles: {
+              id: user.user.id,
+              username: profile.username,
+              avatar_url: profile.avatar_url
+            }
           }]);
         }
       }
@@ -259,8 +281,7 @@ const QuickTournamentSearch = () => {
   };
 
   const isUserReady = () => {
-    const { data } = supabase.auth.getSession();
-    return readyPlayers.some(id => id === data?.session?.user?.id);
+    return currentUserId ? readyPlayers.includes(currentUserId) : false;
   };
 
   return (

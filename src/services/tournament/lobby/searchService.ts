@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
 import { updateLobbyPlayerCount as updateLobbyPlayerCountFromUtils } from "@/hooks/tournament-search/utils";
@@ -250,19 +251,40 @@ export const searchForQuickTournament = async () => {
     } else {
       console.log(`[TOURNAMENT] Adding user ${user.user.id} to lobby ${lobbyId}`);
       
-      // Add player to the new lobby
-      const { error: insertError } = await supabase
+      // Ensure there's no constraint violation by double-checking
+      const { data: doubleCheck } = await supabase
         .from('lobby_participants')
-        .insert({
-          lobby_id: lobbyId,
-          user_id: user.user.id,
-          status: initialStatus,
-          is_ready: false
-        });
+        .select('id')
+        .eq('lobby_id', lobbyId)
+        .eq('user_id', user.user.id);
         
-      if (insertError) {
-        console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
-        throw insertError;
+      if (doubleCheck && doubleCheck.length > 0) {
+        console.log(`[TOURNAMENT] User already has a participation record, updating status`);
+        
+        // Update instead of insert
+        await supabase
+          .from('lobby_participants')
+          .update({
+            status: initialStatus,
+            is_ready: false
+          })
+          .eq('lobby_id', lobbyId)
+          .eq('user_id', user.user.id);
+      } else {
+        // Add player to the new lobby
+        const { error: insertError } = await supabase
+          .from('lobby_participants')
+          .insert({
+            lobby_id: lobbyId,
+            user_id: user.user.id,
+            status: initialStatus,
+            is_ready: false
+          });
+          
+        if (insertError) {
+          console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
+          throw insertError;
+        }
       }
     }
     
@@ -300,7 +322,9 @@ export const searchForQuickTournament = async () => {
           user_id: user.user.id,
           status: initialStatus,
           is_ready: false
-        });
+        })
+        .onConflict(['lobby_id', 'user_id'])
+        .merge();
     }
     
     // Force update player count one more time to ensure accuracy

@@ -39,11 +39,11 @@ const QuickTournamentSearch = () => {
     });
   }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, tournamentCreationStatus, isCreatingTournament]);
 
-  // Показываем тост с ошибкой, если происходит ошибка поиска
+  // Handle page close during search
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isSearching || readyCheckActive) {
-        // Пытаемся отменить поиск при закрытии страницы
+        // Try to cancel search when closing the page
         handleCancelSearch();
         e.preventDefault();
         e.returnValue = '';

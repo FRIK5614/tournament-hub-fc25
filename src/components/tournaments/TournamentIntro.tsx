@@ -1,5 +1,5 @@
 
-import { Loader2, Circle } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface TournamentIntroProps {
@@ -15,28 +15,18 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
         Победы повышают ваш рейтинг для участия в долгосрочных турнирах.
       </p>
       
-      <div className="flex justify-center items-center">
-        <Button 
-          className={`
-            w-48 h-48 rounded-full 
-            bg-fc-accent/20 border-2 border-fc-accent 
-            hover:bg-fc-accent/30 transition-all duration-300
-            flex flex-col items-center justify-center
-            ${isLoading ? 'animate-pulse' : 'hover:scale-105'}
-          `}
-          onClick={onStartSearch}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <Loader2 className="animate-spin text-fc-accent" size={48} />
-          ) : (
-            <>
-              <Circle className="text-fc-accent mb-2" size={48} />
-              <span className="text-fc-accent font-medium">Найти турнир</span>
-            </>
-          )}
-        </Button>
-      </div>
+      <Button 
+        className="bg-fc-accent hover:bg-fc-accent/80 transition-colors w-full py-6 text-lg font-medium"
+        onClick={onStartSearch}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            Поиск...
+          </>
+        ) : "Найти турнир"}
+      </Button>
     </div>
   );
 };

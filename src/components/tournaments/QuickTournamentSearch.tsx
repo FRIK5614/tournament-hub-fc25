@@ -1,14 +1,17 @@
 
 import { useNavigate } from 'react-router-dom';
 import { useTournamentSearch } from '@/hooks/useTournamentSearch';
-import TournamentIntro from './TournamentIntro';
-import TournamentSearchStatus from './TournamentSearchStatus';
-import ReadyCheck from './ReadyCheck';
+import TournamentIntro from './lobby/TournamentIntro';
+import TournamentSearchStatus from './lobby/TournamentSearchStatus';
+import ReadyCheck from './lobby/ReadyCheck';
 import { useEffect } from 'react';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
+import { motion } from 'framer-motion';
 
 const QuickTournamentSearch = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  
   const {
     isSearching,
     readyCheckActive,
@@ -59,9 +62,18 @@ const QuickTournamentSearch = () => {
   // Add navigation effect when tournamentId is set
   useEffect(() => {
     if (tournamentId) {
-      navigate(`/tournaments/${tournamentId}`);
+      toast({
+        title: "Турнир готов!",
+        description: "Переходим на страницу турнира...",
+        variant: "default",
+      });
+      
+      // Short delay before navigation for toast to be visible
+      setTimeout(() => {
+        navigate(`/tournaments/${tournamentId}`);
+      }, 800);
     }
-  }, [tournamentId, navigate]);
+  }, [tournamentId, navigate, toast]);
 
   const startSearchWithErrorHandling = () => {
     console.log("[TOURNAMENT-UI] Start search button clicked");
@@ -78,8 +90,21 @@ const QuickTournamentSearch = () => {
   };
 
   return (
-    <div className="glass-card p-6">
-      <h3 className="text-xl font-semibold mb-4">Быстрый турнир</h3>
+    <motion.div 
+      className="glass-card p-6 overflow-hidden"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.4 }}
+    >
+      <motion.h3 
+        className="text-xl font-semibold mb-4 flex items-center"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+      >
+        <span className="text-fc-accent mr-2">#</span>
+        Быстрый турнир
+      </motion.h3>
       
       {!isSearching && (
         <TournamentIntro 
@@ -109,7 +134,7 @@ const QuickTournamentSearch = () => {
           onCancel={handleCancelSearch}
         />
       )}
-    </div>
+    </motion.div>
   );
 };
 

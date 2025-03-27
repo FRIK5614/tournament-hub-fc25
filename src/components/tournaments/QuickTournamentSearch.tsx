@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { searchForQuickTournament, markUserAsReady } from '@/services/tournamentService';
+import { searchForQuickTournament, markUserAsReady, checkAllPlayersReady } from '@/services/tournamentService';
 import { Loader2, Users, Check, X } from 'lucide-react';
 
 const QuickTournamentSearch = () => {
@@ -15,6 +15,7 @@ const QuickTournamentSearch = () => {
   const [readyPlayers, setReadyPlayers] = useState<string[]>([]);
   const [searchAttempts, setSearchAttempts] = useState(0);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -115,6 +116,30 @@ const QuickTournamentSearch = () => {
           
           console.log("Ready players:", readyPlayerIds);
           console.log("Total players:", participantsWithProfiles.length);
+          
+          // Check if all players are ready, and we need to manually trigger tournament creation
+          if (readyPlayerIds.length === lobbyData.max_players && lobbyData.status === 'ready_check') {
+            const checkTournament = async () => {
+              // Only check every 2 seconds to avoid too many requests
+              const tournamentId = await checkAllPlayersReady(lobbyId);
+              if (tournamentId && typeof tournamentId === 'string') {
+                console.log("All players ready, tournament created:", tournamentId);
+                
+                toast({
+                  title: "Турнир начинается!",
+                  description: "Все игроки готовы. Переход к турниру...",
+                  variant: "default",
+                });
+                
+                // Navigate to the tournament
+                setTimeout(() => {
+                  navigate(`/tournaments/${tournamentId}`);
+                }, 1000);
+              }
+            };
+            
+            checkTournament();
+          }
         } else {
           setLobbyParticipants([]);
           setReadyPlayers([]);
@@ -281,9 +306,10 @@ const QuickTournamentSearch = () => {
   };
 
   const handleReadyCheck = async () => {
-    if (!lobbyId) return;
+    if (!lobbyId || isLoading) return;
     
     try {
+      setIsLoading(true);
       const result = await markUserAsReady(lobbyId);
       console.log("Mark ready result:", result);
       
@@ -303,6 +329,8 @@ const QuickTournamentSearch = () => {
         description: error.message || "Не удалось подтвердить готовность",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -398,10 +426,15 @@ const QuickTournamentSearch = () => {
           <div className="flex gap-3 justify-center">
             {!isUserReady() && (
               <button 
-                className="btn-primary bg-green-600 hover:bg-green-700"
+                className={`btn-primary bg-green-600 hover:bg-green-700 ${isLoading ? 'opacity-50' : ''}`}
                 onClick={handleReadyCheck}
+                disabled={isLoading}
               >
-                <Check size={18} className="mr-2" />
+                {isLoading ? (
+                  <Loader2 size={18} className="animate-spin mr-2" />
+                ) : (
+                  <Check size={18} className="mr-2" />
+                )}
                 Я готов
               </button>
             )}
@@ -409,6 +442,7 @@ const QuickTournamentSearch = () => {
             <button 
               className="btn-outline bg-red-500/20 border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
               onClick={handleCancelSearch}
+              disabled={isLoading}
             >
               <X size={18} className="mr-2" />
               Отмена

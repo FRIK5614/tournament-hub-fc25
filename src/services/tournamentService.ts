@@ -90,10 +90,10 @@ export const markUserAsReady = async (lobbyId: string) => {
   }
   
   // Directly check if all players are ready and create tournament if needed
-  const result = await checkAllPlayersReady(lobbyId);
-  console.log("Check all players ready result:", result);
+  const tournamentId = await checkAllPlayersReady(lobbyId);
+  console.log("Check all players ready result:", tournamentId);
   
-  return true;
+  return tournamentId !== false;
 };
 
 export const checkAllPlayersReady = async (lobbyId: string) => {
@@ -101,7 +101,7 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
     // Get lobby info first
     const { data: lobby, error: lobbyError } = await supabase
       .from('tournament_lobbies')
-      .select('current_players, max_players, status')
+      .select('current_players, max_players, status, tournament_id')
       .eq('id', lobbyId)
       .single();
     
@@ -112,6 +112,12 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
     
     console.log("Lobby status check:", lobby);
     
+    // If tournament is already created, return its ID
+    if (lobby.tournament_id) {
+      console.log("Tournament already exists, ID:", lobby.tournament_id);
+      return lobby.tournament_id;
+    }
+    
     if (lobby.status !== 'ready_check') {
       console.log("Lobby not in ready_check state:", lobby.status);
       return false;
@@ -120,20 +126,22 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
     // Get all READY participants in the lobby
     const { data: readyParticipants, error: participantsError } = await supabase
       .from('lobby_participants')
-      .select('user_id')
+      .select('user_id, is_ready')
       .eq('lobby_id', lobbyId)
-      .eq('status', 'ready')
-      .eq('is_ready', true);
+      .eq('status', 'ready');
     
     if (participantsError) {
       console.error("Ошибка при проверке готовности игроков:", participantsError);
       return false;
     }
     
-    console.log("Ready players:", readyParticipants?.length, "Total expected:", lobby.max_players);
+    // Filter only truly ready players (double-check is_ready flag)
+    const actuallyReadyPlayers = readyParticipants?.filter(p => p.is_ready) || [];
+    
+    console.log("Ready players:", actuallyReadyPlayers.length, "Total expected:", lobby.max_players);
     
     // Check if we have exactly the right number of players and they're all ready
-    if (readyParticipants?.length === lobby.max_players) {
+    if (actuallyReadyPlayers.length === lobby.max_players) {
       console.log("All players are ready. Creating tournament...");
       
       // Call the RPC function to create a tournament

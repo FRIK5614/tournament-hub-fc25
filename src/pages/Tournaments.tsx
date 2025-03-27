@@ -24,29 +24,34 @@ const Tournaments = () => {
       
       if (user?.user) {
         // Проверяем, является ли пользователь администратором
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('admin')
-          .eq('id', user.user.id)
-          .single();
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')  // Using * instead of specific fields to avoid errors
+            .eq('id', user.user.id)
+            .single();
+            
+          // Check if the profile exists and has an admin field set to true
+          setIsAdmin(profile?.admin === true);
           
-        setIsAdmin(profile?.admin === true);
-        
-        // Если много дубликатов турниров, показываем компонент очистки
-        const analysis = await analyzeTournamentCreation().catch(() => null);
-        if (analysis && analysis.totalDuplicates > 0) {
-          setShowCleanup(true);
-        }
-        
-        // Загружаем активные турниры пользователя
-        const { data: participations, error } = await supabase
-          .from('tournament_participants')
-          .select('tournament_id(*, lobby:lobby_id(*))')
-          .eq('user_id', user.user.id)
-          .eq('tournament_id.status', 'active');
+          // Если много дубликатов турниров, показываем компонент очистки
+          const analysis = await analyzeTournamentCreation().catch(() => null);
+          if (analysis && analysis.totalDuplicates > 0) {
+            setShowCleanup(true);
+          }
+          
+          // Загружаем активные турниры пользователя
+          const { data: participations, error } = await supabase
+            .from('tournament_participants')
+            .select('tournament_id(*, lobby:lobby_id(*))')
+            .eq('user_id', user.user.id)
+            .eq('tournament_id.status', 'active');
 
-        if (participations) {
-          setUserTournaments(participations.map(p => p.tournament_id));
+          if (participations) {
+            setUserTournaments(participations.map(p => p.tournament_id));
+          }
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
         }
       }
     };

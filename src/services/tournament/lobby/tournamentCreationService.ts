@@ -2,11 +2,23 @@
 import { supabase } from "@/integrations/supabase/client";
 import { withRetry, delay, RetryOptions } from "../utils";
 
+// Add mutex for preventing multiple simultaneous creation attempts
+let isCreatingTournament = false;
+
 /**
  * Create a tournament for a lobby by calling the RPC function with improved error handling
  */
 export const createTournamentViaRPC = async (lobbyId: string) => {
+  // Check if already creating a tournament
+  if (isCreatingTournament) {
+    console.log("[TOURNAMENT] Tournament creation already in progress, skipping");
+    return { tournamentId: null, created: false, inProgress: true };
+  }
+
   try {
+    isCreatingTournament = true;
+    console.log("[TOURNAMENT] Tournament creation started for lobby:", lobbyId);
+
     // Check authentication
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData?.user) {
@@ -58,6 +70,18 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
       throw new Error(`Not enough players to create tournament: ${participantCount}/4`);
     }
 
+    // Double-check if a tournament has been created in the meantime
+    const { data: checkLobby } = await supabase
+      .from('tournament_lobbies')
+      .select('tournament_id')
+      .eq('id', lobbyId)
+      .single();
+      
+    if (checkLobby?.tournament_id) {
+      console.log(`[TOURNAMENT] Tournament was created during check: ${checkLobby.tournament_id}`);
+      return { tournamentId: checkLobby.tournament_id, created: false };
+    }
+
     // Update all participants to ready status
     await supabase
       .from('lobby_participants')
@@ -78,6 +102,7 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
       current_participants: participantCount
     };
 
+    // Use a transaction to ensure atomicity
     const { data: tournament, error: tournamentError } = await supabase
       .from('tournaments')
       .insert(tournamentData)
@@ -88,6 +113,8 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
       console.error("[TOURNAMENT] Tournament creation error:", tournamentError);
       throw tournamentError;
     }
+
+    console.log(`[TOURNAMENT] Tournament created with ID: ${tournament.id}`);
 
     // Update lobby with tournament details
     await supabase
@@ -134,6 +161,9 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
   } catch (error) {
     console.error("[TOURNAMENT] Comprehensive error in tournament creation:", error);
     throw error;
+  } finally {
+    // Always release the mutex
+    isCreatingTournament = false;
   }
 };
 

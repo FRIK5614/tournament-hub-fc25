@@ -9,7 +9,7 @@ export interface Tournament {
   id: string;
   title: string;
   description?: string;
-  status: 'registration' | 'active' | 'completed';
+  status: 'registration' | 'active' | 'completed' | 'cancelled';
   created_at: string;
   max_participants: number;
   current_participants: number;

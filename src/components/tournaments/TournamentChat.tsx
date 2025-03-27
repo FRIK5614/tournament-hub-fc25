@@ -17,7 +17,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
     const getUser = async () => {
       const { data } = await supabase.auth.getUser();
       if (data?.user) {
-        // Получаем также данные профиля
+        // Get profile data
         const { data: profile } = await supabase
           .from('profiles')
           .select('username, avatar_url')
@@ -38,6 +38,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
   useEffect(() => {
     const loadMessages = async () => {
       try {
+        // Make sure we're using the right structure for the query
         const { data, error } = await supabase
           .from('chat_messages')
           .select(`
@@ -67,7 +68,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
     
     loadMessages();
     
-    // Подписка на новые сообщения
+    // Subscribe to new messages
     const channel = supabase
       .channel('tournament_chat_messages')
       .on('postgres_changes', {
@@ -76,7 +77,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
         table: 'chat_messages',
         filter: `tournament_id=eq.${tournamentId}`
       }, async (payload) => {
-        // Загружаем полные данные о новом сообщении с информацией об отправителе
+        // Get the full message data with sender info
         const { data, error } = await supabase
           .from('chat_messages')
           .select(`
@@ -110,6 +111,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
     if (!newMessage.trim() || !user) return;
     
     try {
+      // Make sure we're using the right structure for the insert
       const { error } = await supabase
         .from('chat_messages')
         .insert({

@@ -1,8 +1,8 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
-import { getLobbyStatus, getPlayerMatches, getTournamentStandings } from '@/services/tournament';
 import { useToast } from "@/hooks/use-toast";
+import { getTournamentStandings, getPlayerMatches } from '@/services/tournament';
 
 export function useTournamentLobbyData(tournamentId: string) {
   const [loading, setLoading] = useState(true);
@@ -42,21 +42,7 @@ export function useTournamentLobbyData(tournamentId: string) {
         if (user?.user) {
           console.log(`[TOURNAMENT-LOBBY] Loading matches for player: ${user.user.id}`);
           
-          const { data: matches, error: matchesError } = await supabase
-            .from('matches')
-            .select(`
-              *,
-              player1:player1_id(id, username, avatar_url),
-              player2:player2_id(id, username, avatar_url)
-            `)
-            .eq('tournament_id', tournamentId)
-            .or(`player1_id.eq.${user.user.id},player2_id.eq.${user.user.id}`);
-            
-          if (matchesError) {
-            console.error(`[TOURNAMENT-LOBBY] Error loading matches: ${matchesError.message}`);
-            throw matchesError;
-          }
-          
+          const matches = await getPlayerMatches(tournamentId, user.user.id);
           console.log(`[TOURNAMENT-LOBBY] Player matches loaded: ${matches?.length || 0}`);
           setPlayerMatches(matches || []);
         }
@@ -64,20 +50,7 @@ export function useTournamentLobbyData(tournamentId: string) {
         // Get tournament standings
         console.log(`[TOURNAMENT-LOBBY] Loading standings for tournament: ${tournamentId}`);
         
-        const { data: standingsData, error: standingsError } = await supabase
-          .from('tournament_participants')
-          .select(`
-            *,
-            user:user_id(id, username, avatar_url)
-          `)
-          .eq('tournament_id', tournamentId)
-          .order('points', { ascending: false });
-          
-        if (standingsError) {
-          console.error(`[TOURNAMENT-LOBBY] Error loading standings: ${standingsError.message}`);
-          throw standingsError;
-        }
-        
+        const standingsData = await getTournamentStandings(tournamentId);
         console.log(`[TOURNAMENT-LOBBY] Standings loaded: ${standingsData?.length || 0} participants`);
         setStandings(standingsData || []);
         
@@ -103,29 +76,16 @@ export function useTournamentLobbyData(tournamentId: string) {
         schema: 'public',
         table: 'matches',
         filter: `tournament_id=eq.${tournamentId}`
-      }, async () => {
+      }, async (payload) => {
         console.log(`[TOURNAMENT-LOBBY] Matches updated for tournament: ${tournamentId}`);
         
         try {
-          // Обновляем матчи для текущего пользователя
+          // Update matches for current user
           const { data: user } = await supabase.auth.getUser();
           if (user?.user) {
-            const { data: matches, error: matchesError } = await supabase
-              .from('matches')
-              .select(`
-                *,
-                player1:player1_id(id, username, avatar_url),
-                player2:player2_id(id, username, avatar_url)
-              `)
-              .eq('tournament_id', tournamentId)
-              .or(`player1_id.eq.${user.user.id},player2_id.eq.${user.user.id}`);
-              
-            if (matchesError) {
-              console.error(`[TOURNAMENT-LOBBY] Error updating matches: ${matchesError.message}`);
-            } else {
-              console.log(`[TOURNAMENT-LOBBY] Updated player matches: ${matches?.length || 0}`);
-              setPlayerMatches(matches || []);
-            }
+            const matches = await getPlayerMatches(tournamentId, user.user.id);
+            console.log(`[TOURNAMENT-LOBBY] Updated player matches: ${matches?.length || 0}`);
+            setPlayerMatches(matches || []);
           }
         } catch (error: any) {
           console.error(`[TOURNAMENT-LOBBY] Error in matches subscription: ${error.message}`);
@@ -145,28 +105,16 @@ export function useTournamentLobbyData(tournamentId: string) {
         console.log(`[TOURNAMENT-LOBBY] Standings updated for tournament: ${tournamentId}`);
         
         try {
-          const { data: standingsData, error: standingsError } = await supabase
-            .from('tournament_participants')
-            .select(`
-              *,
-              user:user_id(id, username, avatar_url)
-            `)
-            .eq('tournament_id', tournamentId)
-            .order('points', { ascending: false });
-            
-          if (standingsError) {
-            console.error(`[TOURNAMENT-LOBBY] Error updating standings: ${standingsError.message}`);
-          } else {
-            console.log(`[TOURNAMENT-LOBBY] Updated standings: ${standingsData?.length || 0} participants`);
-            setStandings(standingsData || []);
-          }
+          const standingsData = await getTournamentStandings(tournamentId);
+          console.log(`[TOURNAMENT-LOBBY] Updated standings: ${standingsData?.length || 0} participants`);
+          setStandings(standingsData || []);
         } catch (error: any) {
           console.error(`[TOURNAMENT-LOBBY] Error in standings subscription: ${error.message}`);
         }
       })
       .subscribe();
       
-    // Subscribe to chat messages
+    // Setup improved chat message subscription
     const chatChannel = supabase
       .channel('tournament_chat')
       .on('postgres_changes', {
@@ -187,11 +135,11 @@ export function useTournamentLobbyData(tournamentId: string) {
     };
   }, [tournamentId, toast]);
 
-  // Найти текущий активный матч для игрока
+  // Find current active match for player
   const getCurrentMatch = () => {
-    if (!playerMatches.length) return null;
+    if (!playerMatches || playerMatches.length === 0) return null;
     
-    // Сначала ищем матчи со статусом 'scheduled' или 'awaiting_confirmation'
+    // First look for matches with status 'scheduled' or 'awaiting_confirmation'
     const currentMatch = playerMatches.find(match => 
       match.status === 'scheduled' || match.status === 'awaiting_confirmation'
     );

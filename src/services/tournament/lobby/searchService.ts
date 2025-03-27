@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
 import { updateLobbyPlayerCount as updateLobbyPlayerCountFromUtils } from "@/hooks/tournament-search/utils";
@@ -271,19 +270,48 @@ export const searchForQuickTournament = async () => {
           .eq('lobby_id', lobbyId)
           .eq('user_id', user.user.id);
       } else {
-        // Add player to the new lobby
-        const { error: insertError } = await supabase
-          .from('lobby_participants')
-          .insert({
-            lobby_id: lobbyId,
-            user_id: user.user.id,
-            status: initialStatus,
-            is_ready: false
-          });
+        // Add player to the new lobby - using a try/catch to handle potential race conditions
+        try {
+          const { error: insertError } = await supabase
+            .from('lobby_participants')
+            .insert({
+              lobby_id: lobbyId,
+              user_id: user.user.id,
+              status: initialStatus,
+              is_ready: false
+            });
+            
+          if (insertError) {
+            // If we get a unique constraint error, the user was added in a race condition
+            if (insertError.code === '23505') {
+              console.log(`[TOURNAMENT] Constraint violation detected, falling back to update`);
+              
+              // Update instead
+              await supabase
+                .from('lobby_participants')
+                .update({
+                  status: initialStatus,
+                  is_ready: false
+                })
+                .eq('lobby_id', lobbyId)
+                .eq('user_id', user.user.id);
+            } else {
+              console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
+              throw insertError;
+            }
+          }
+        } catch (err) {
+          console.error(`[TOURNAMENT] Error handling participant insertion:`, err);
           
-        if (insertError) {
-          console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
-          throw insertError;
+          // One more attempt with update as fallback
+          await supabase
+            .from('lobby_participants')
+            .update({
+              status: initialStatus,
+              is_ready: false
+            })
+            .eq('lobby_id', lobbyId)
+            .eq('user_id', user.user.id);
         }
       }
     }
@@ -314,17 +342,28 @@ export const searchForQuickTournament = async () => {
     if (!verifyParticipant) {
       console.warn(`[TOURNAMENT] Player doesn't appear to be in lobby after addition, retrying`);
       
-      // Try to add again if verification failed
-      await supabase
-        .from('lobby_participants')
-        .insert({
-          lobby_id: lobbyId,
-          user_id: user.user.id,
-          status: initialStatus,
-          is_ready: false
-        })
-        .onConflict(['lobby_id', 'user_id'])
-        .merge();
+      // Try to add again if verification failed - using insert with error handling
+      try {
+        await supabase
+          .from('lobby_participants')
+          .insert({
+            lobby_id: lobbyId,
+            user_id: user.user.id,
+            status: initialStatus,
+            is_ready: false
+          });
+      } catch (err) {
+        console.error(`[TOURNAMENT] Final attempt at adding participant failed:`, err);
+        // Last resort fallback - try an update
+        await supabase
+          .from('lobby_participants')
+          .update({
+            status: initialStatus,
+            is_ready: false
+          })
+          .eq('lobby_id', lobbyId)
+          .eq('user_id', user.user.id);
+      }
     }
     
     // Force update player count one more time to ensure accuracy

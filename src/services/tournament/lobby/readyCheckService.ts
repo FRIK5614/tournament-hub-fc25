@@ -104,3 +104,67 @@ export const markUserAsReady = async (lobbyId: string) => {
     throw error;
   }
 };
+
+/**
+ * Обработка выхода игрока из лобби, находящегося в стадии готовности
+ */
+export const handlePlayerLeaveFromReadyCheck = async (lobbyId: string) => {
+  try {
+    console.log(`[TOURNAMENT] Handle player leave from ready check for lobby ${lobbyId}`);
+    
+    // Проверяем текущий статус лобби
+    const { data: lobby, error: lobbyError } = await supabase
+      .from('tournament_lobbies')
+      .select('status, current_players')
+      .eq('id', lobbyId)
+      .single();
+      
+    if (lobbyError) {
+      console.error("[TOURNAMENT] Error checking lobby status:", lobbyError);
+      throw new Error("Не удалось проверить статус лобби");
+    }
+    
+    // Если лобби в статусе ready_check, сбрасываем его до 'waiting'
+    if (lobby.status === 'ready_check') {
+      console.log(`[TOURNAMENT] Resetting lobby ${lobbyId} from ready_check to waiting state`);
+      
+      // Сбрасываем статус лобби на waiting
+      const { error: updateError } = await supabase
+        .from('tournament_lobbies')
+        .update({ 
+          status: 'waiting', 
+          ready_check_started_at: null
+        })
+        .eq('id', lobbyId);
+        
+      if (updateError) {
+        console.error("[TOURNAMENT] Error resetting lobby status:", updateError);
+        throw new Error("Не удалось сбросить статус лобби");
+      }
+      
+      // Сбрасываем готовность всех оставшихся игроков
+      const { error: resetPlayersError } = await supabase
+        .from('lobby_participants')
+        .update({ 
+          is_ready: false,
+          status: 'searching'
+        })
+        .eq('lobby_id', lobbyId)
+        .in('status', ['ready']);
+        
+      if (resetPlayersError) {
+        console.error("[TOURNAMENT] Error resetting player readiness:", resetPlayersError);
+      }
+      
+      // Обновляем счетчик игроков в лобби
+      await updateLobbyPlayerCount(lobbyId);
+      
+      console.log(`[TOURNAMENT] Lobby ${lobbyId} successfully reset to waiting state`);
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error("[TOURNAMENT] Error in handlePlayerLeaveFromReadyCheck:", error);
+    throw error;
+  }
+};

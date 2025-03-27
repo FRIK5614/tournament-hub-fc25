@@ -1,58 +1,56 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { updateLobbyPlayerCount } from "../utils";
+import { handlePlayerLeaveFromReadyCheck } from "./readyCheckService";
 
 /**
- * Remove a user from a quick tournament lobby
+ * Have a user leave a quick tournament lobby
  */
 export const leaveQuickTournament = async (lobbyId: string) => {
-  const { data: user } = await supabase.auth.getUser();
-  
-  if (!user?.user) {
-    throw new Error("Необходимо авторизоваться для выхода из турнира");
-  }
-  
   try {
+    const { data: user } = await supabase.auth.getUser();
+    
+    if (!user?.user) {
+      throw new Error("Пользователь не авторизован");
+    }
+    
     console.log(`[TOURNAMENT] User ${user.user.id} leaving lobby ${lobbyId}`);
     
-    // Check if tournament has already been created
-    const { data: lobby, error: lobbyError } = await supabase
+    // Проверяем текущий статус лобби перед выходом
+    const { data: lobby } = await supabase
       .from('tournament_lobbies')
-      .select('tournament_id, status')
+      .select('status')
       .eq('id', lobbyId)
       .maybeSingle();
-      
-    if (lobbyError) {
-      console.error("[TOURNAMENT] Error checking lobby status:", lobbyError);
-      return false;
-    }
     
-    // If a tournament is already active, we can't leave
-    if (lobby?.tournament_id && lobby?.status === 'active') {
-      console.log(`[TOURNAMENT] Cannot leave active tournament ${lobby.tournament_id}`);
-      return false;
-    }
+    // Получаем текущее количество игроков
+    const { data: participants } = await supabase
+      .from('lobby_participants')
+      .select('id, user_id')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
     
-    // Update the participant status to 'left'
-    const { error: updateError } = await supabase
+    const currentPlayerCount = participants?.length || 0;
+    
+    // Обновляем статус игрока на "вышел"
+    await supabase
       .from('lobby_participants')
       .update({ status: 'left', is_ready: false })
       .eq('lobby_id', lobbyId)
       .eq('user_id', user.user.id);
-      
-    if (updateError) {
-      console.error("[TOURNAMENT] Error marking participant as left:", updateError);
-      return false;
+    
+    // Если лобби в состоянии ready_check, обрабатываем это специальным образом
+    if (lobby?.status === 'ready_check') {
+      await handlePlayerLeaveFromReadyCheck(lobbyId);
+    } else {
+      // Для других статусов просто обновляем счетчик игроков
+      await updateLobbyPlayerCount(lobbyId);
     }
     
-    console.log(`[TOURNAMENT] Successfully marked user ${user.user.id} as left from lobby ${lobbyId}`);
-    
-    // Update the lobby player count
-    await updateLobbyPlayerCount(lobbyId);
-    
-    return true;
+    console.log(`[TOURNAMENT] User ${user.user.id} successfully left lobby ${lobbyId}`);
+    return { success: true };
   } catch (error) {
-    console.error("[TOURNAMENT] Error in leaveQuickTournament:", error);
-    return false;
+    console.error("[TOURNAMENT] Error leaving tournament:", error);
+    throw error;
   }
 };

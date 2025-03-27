@@ -1,97 +1,89 @@
 
 import { useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
+import { TournamentSearchAction } from './reducer';
 
 export const useSearchSubscriptions = (
   isSearching: boolean,
   lobbyId: string | null,
   refreshLobbyData: (lobbyId: string) => Promise<void>,
-  dispatch: React.Dispatch<any>,
+  dispatch: React.Dispatch<TournamentSearchAction>
 ) => {
-  // Настройка real-time подписок на изменения в лобби
+  // Подписка на изменения статуса лобби
   useEffect(() => {
     if (!isSearching || !lobbyId) return;
-
-    console.log(`[TOURNAMENT-UI] Setting up realtime subscriptions for lobby ${lobbyId}`);
     
-    // Подписка на изменения лобби
+    console.log("[TOURNAMENT-UI] Setting up lobby subscriptions for", lobbyId);
+    
+    // Подписка на изменения в лобби
     const lobbyChannel = supabase
-      .channel(`lobby_changes_${lobbyId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'tournament_lobbies',
-          filter: `id=eq.${lobbyId}`
-        },
-        (payload) => {
-          console.log('[TOURNAMENT-UI] Lobby changed:', payload.new);
-          
-          // Если количество игроков изменилось, обновляем данные о участниках
-          if (payload.new.current_players !== payload.old.current_players) {
-            console.log('[TOURNAMENT-UI] Player count changed, refreshing participants');
-            refreshLobbyData(lobbyId);
-          }
-          
-          // Проверяем, изменился ли статус на ready_check
-          if (payload.new.status === 'ready_check' && payload.old.status !== 'ready_check') {
-            console.log('[TOURNAMENT-UI] Ready check activated!');
-            dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
-            dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // 2 минуты на подтверждение
-            
-            // Принудительно обновляем данные о участниках
-            refreshLobbyData(lobbyId);
-          }
-          
-          // Проверяем, был ли создан турнир
-          if (payload.new.tournament_id && !payload.old.tournament_id) {
-            console.log(`[TOURNAMENT-UI] Tournament created: ${payload.new.tournament_id}`);
-            dispatch({ type: 'SET_TOURNAMENT_ID', payload: payload.new.tournament_id });
-          }
+      .channel(`lobby_updates:${lobbyId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'tournament_lobbies',
+        filter: `id=eq.${lobbyId}`
+      }, async (payload) => {
+        console.log("[TOURNAMENT-UI] Lobby update received:", payload);
+        
+        const newStatus = payload.new.status;
+        const oldStatus = payload.old.status;
+        
+        // Если статус изменился с ready_check на waiting, это значит кто-то вышел
+        if (oldStatus === 'ready_check' && newStatus === 'waiting') {
+          console.log("[TOURNAMENT-UI] Lobby reset from ready_check to waiting");
+          dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: false });
+          dispatch({ type: 'SET_READY_PLAYERS', payload: [] });
         }
-      )
+        
+        // Если лобби перешло в ready_check, активируем таймер
+        if (newStatus === 'ready_check' && oldStatus !== 'ready_check') {
+          console.log("[TOURNAMENT-UI] Lobby entered ready_check state");
+          dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: true });
+          dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });
+        }
+        
+        // Если у лобби появился tournament_id
+        if (payload.new.tournament_id && !payload.old.tournament_id) {
+          console.log(`[TOURNAMENT-UI] Tournament was created: ${payload.new.tournament_id}`);
+          dispatch({ type: 'SET_TOURNAMENT_ID', payload: payload.new.tournament_id });
+        }
+        
+        // Обновляем данные лобби
+        await refreshLobbyData(lobbyId);
+      })
       .subscribe();
-
-    // Подписка на изменения участников (как INSERT, так и UPDATE)
+    
+    // Подписка на изменения в участниках лобби
     const participantsChannel = supabase
-      .channel(`participants_changes_${lobbyId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',  // Слушаем все события (INSERT, UPDATE, DELETE)
-          schema: 'public',
-          table: 'lobby_participants',
-          filter: `lobby_id=eq.${lobbyId}`
-        },
-        (payload) => {
-          console.log('[TOURNAMENT-UI] Participant changed:', payload);
+      .channel(`lobby_participants:${lobbyId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'lobby_participants',
+        filter: `lobby_id=eq.${lobbyId}`
+      }, async (payload) => {
+        console.log("[TOURNAMENT-UI] Participants update received:", payload);
+        
+        // Обновляем данные лобби
+        await refreshLobbyData(lobbyId);
+        
+        // Специальная обработка для выхода игрока
+        if (payload.eventType === 'UPDATE' && payload.new.status === 'left' && payload.old.status !== 'left') {
+          console.log("[TOURNAMENT-UI] Player left the lobby");
           
-          // Если изменился флаг is_ready, обновляем массив готовых игроков
-          if (payload.eventType === 'UPDATE' && 
-              payload.new.is_ready === true && 
-              payload.old.is_ready === false) {
-            console.log(`[TOURNAMENT-UI] Player ${payload.new.user_id} marked as ready`);
-            dispatch({ type: 'ADD_READY_PLAYER', payload: payload.new.user_id });
+          // Можно добавить дополнительные уведомления для пользователя
+          if (payload.new.status === 'left') {
+            console.log("[TOURNAMENT-UI] A player has left the lobby");
           }
-          
-          // Любое изменение участников должно вызывать обновление
-          refreshLobbyData(lobbyId);
         }
-      )
+      })
       .subscribe();
-
-    // Опрашиваем изменения каждые 3 секунды как запасной механизм
-    const intervalId = setInterval(() => {
-      console.log('[TOURNAMENT-UI] Polling for lobby data updates');
-      refreshLobbyData(lobbyId);
-    }, 3000);
-
+    
     return () => {
-      console.log(`[TOURNAMENT-UI] Cleaning up realtime subscriptions for lobby ${lobbyId}`);
+      console.log("[TOURNAMENT-UI] Cleaning up lobby subscriptions");
       supabase.removeChannel(lobbyChannel);
       supabase.removeChannel(participantsChannel);
-      clearInterval(intervalId);
     };
   }, [isSearching, lobbyId, refreshLobbyData, dispatch]);
 };

@@ -4,13 +4,14 @@ import { useTournamentSearch } from '@/hooks/useTournamentSearch';
 import TournamentIntro from './lobby/TournamentIntro';
 import TournamentSearchStatus from './lobby/TournamentSearchStatus';
 import ReadyCheck from './lobby/ReadyCheck';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 
 const QuickTournamentSearch = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const lastCountdownSeconds = useRef<number | null>(null);
   
   const {
     isSearching,
@@ -40,9 +41,11 @@ const QuickTournamentSearch = () => {
       tournamentCreationStatus,
       isCreatingTournament,
       tournamentId,
+      countdownSeconds,
       lobbyParticipants
     });
-  }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, tournamentCreationStatus, isCreatingTournament, tournamentId]);
+  }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, 
+      tournamentCreationStatus, isCreatingTournament, tournamentId, countdownSeconds]);
 
   // Handle page close during search
   useEffect(() => {
@@ -60,6 +63,61 @@ const QuickTournamentSearch = () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [isSearching, readyCheckActive, handleCancelSearch]);
+
+  // Автоматически запускаем создание турнира, когда таймер истекает
+  useEffect(() => {
+    // Отслеживаем переход countdownSeconds через 0
+    if (
+      readyCheckActive && 
+      lastCountdownSeconds.current !== null && 
+      lastCountdownSeconds.current > 0 && 
+      countdownSeconds <= 0 && 
+      !isCreatingTournament &&
+      !tournamentId &&
+      lobbyParticipants?.length >= 4
+    ) {
+      console.log("[TOURNAMENT-UI] Timer expired, auto-triggering tournament creation");
+      checkTournamentCreation();
+      
+      toast({
+        title: "Время ожидания истекло",
+        description: "Создаем турнир автоматически...",
+        variant: "default",
+      });
+    }
+    
+    // Сохраняем текущее значение для следующего сравнения
+    lastCountdownSeconds.current = countdownSeconds;
+  }, [
+    countdownSeconds, 
+    readyCheckActive, 
+    isCreatingTournament, 
+    tournamentId, 
+    lobbyParticipants?.length, 
+    checkTournamentCreation, 
+    toast
+  ]);
+
+  // Автоматически проверяем создание турнира, если все игроки готовы
+  useEffect(() => {
+    if (
+      readyCheckActive && 
+      !isCreatingTournament && 
+      !tournamentId &&
+      lobbyParticipants?.length >= 4 && 
+      readyPlayers?.length >= 4
+    ) {
+      console.log("[TOURNAMENT-UI] All players ready, triggering tournament creation");
+      checkTournamentCreation();
+    }
+  }, [
+    readyCheckActive, 
+    readyPlayers?.length, 
+    isCreatingTournament, 
+    tournamentId, 
+    lobbyParticipants?.length, 
+    checkTournamentCreation
+  ]);
 
   // Add navigation effect when tournamentId is set
   useEffect(() => {

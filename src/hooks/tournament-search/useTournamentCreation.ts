@@ -35,10 +35,20 @@ export const useTournamentCreation = (
         return;
       }
 
-      // Проверяем, все ли игроки готовы
-      if (state.readyPlayers.length < 4 || state.lobbyParticipants.length < 4) {
-        console.log(`[TOURNAMENT-UI] Not enough ready players: ${state.readyPlayers.length}/${state.lobbyParticipants.length}`);
-        return;
+      // Проверяем, все ли игроки готовы - важно! Уменьшаем минимальное количество готовых игроков, 
+      // если таймер истек, чтобы в любом случае попытаться создать турнир
+      const shouldForceCreate = state.countdownSeconds <= 0;
+      const minRequiredReady = shouldForceCreate ? 1 : 4; // Если таймер истек, достаточно хотя бы одного игрока
+      
+      if (state.readyPlayers.length < minRequiredReady || state.lobbyParticipants.length < 4) {
+        console.log(`[TOURNAMENT-UI] Not enough ready players: ${state.readyPlayers.length}/${state.lobbyParticipants.length}, force: ${shouldForceCreate}`);
+        
+        // Если таймер истек, но у нас есть хотя бы 4 игрока в лобби, пробуем создать турнир
+        if (shouldForceCreate && state.lobbyParticipants.length >= 4) {
+          console.log(`[TOURNAMENT-UI] Timer expired, forcing tournament creation with ${state.readyPlayers.length} ready players`);
+        } else {
+          return;
+        }
       }
 
       console.log(`[TOURNAMENT-UI] Initiating tournament creation (attempt ${attempt + 1}/${MAX_CREATION_ATTEMPTS})`);
@@ -63,6 +73,24 @@ export const useTournamentCreation = (
         dispatch({ type: 'SET_IS_CREATING_TOURNAMENT', payload: false });
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
         return;
+      }
+
+      // Если таймер истек, принудительно обновляем статус игроков на ready
+      if (shouldForceCreate) {
+        console.log("[TOURNAMENT-UI] Timer expired, updating all players to ready status");
+        try {
+          // Обновляем статус всех участников лобби на ready
+          await supabase
+            .from('lobby_participants')
+            .update({ 
+              is_ready: true,
+              status: 'ready' 
+            })
+            .eq('lobby_id', state.lobbyId);
+        } catch (updateError) {
+          console.error("[TOURNAMENT-UI] Error updating players ready status:", updateError);
+          // Продолжаем с созданием турнира, несмотря на ошибку
+        }
       }
 
       // Проверяем еще раз количество игроков в лобби
@@ -205,6 +233,7 @@ export const useTournamentCreation = (
     state.lobbyId, 
     state.readyPlayers.length, 
     state.lobbyParticipants.length,
+    state.countdownSeconds,
     toast,
     handleCancelSearch
   ]);

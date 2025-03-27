@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { motion } from 'framer-motion';
+import { useEffect } from 'react';
 
 interface ReadyCheckProps {
   countdownSeconds: number;
@@ -76,6 +77,12 @@ const ReadyCheck = ({
               Подготовка турнира...
             </div>
           )}
+          {tournamentCreationStatus === 'creating' && (
+            <div className="text-yellow-500 flex items-center justify-center">
+              <Loader2 className="mr-2 animate-spin" size={16} />
+              Создание турнира...
+            </div>
+          )}
           {tournamentCreationStatus === 'created' && (
             <div className="text-green-500 flex items-center justify-center">
               <Check className="mr-2" size={16} />
@@ -115,6 +122,25 @@ const ReadyCheck = ({
       status: p.status 
     }))
   );
+  
+  // Улучшенное отображение для истекшего таймера
+  const renderExpiredTimerMessage = () => {
+    if (isCountdownExpired && !tournamentCreationStatus) {
+      return (
+        <motion.div 
+          className="mb-4 p-2 bg-yellow-500/20 rounded-md"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <p className="text-yellow-500 font-medium">
+            Время ожидания истекло! Создаем турнир автоматически...
+          </p>
+        </motion.div>
+      );
+    }
+    return null;
+  };
 
   return (
     <motion.div 
@@ -141,6 +167,8 @@ const ReadyCheck = ({
         Подтвердите готовность начать турнир ({readyCount}/{totalCount})
       </motion.p>
       
+      {renderExpiredTimerMessage()}
+      
       {!isCountdownExpired && (
         <motion.div 
           className="mb-4"
@@ -149,7 +177,7 @@ const ReadyCheck = ({
           transition={{ delay: 0.3 }}
         >
           <div className="flex justify-center items-center gap-2 mb-2">
-            <Badge variant="outline" className="bg-yellow-500/20 border-yellow-500 px-3 py-1 rounded-full text-sm font-medium">
+            <Badge variant="outline" className={`${countdownSeconds < 30 ? 'bg-red-500/20 border-red-500' : 'bg-yellow-500/20 border-yellow-500'} px-3 py-1 rounded-full text-sm font-medium`}>
               {formatTime(countdownSeconds)}
             </Badge>
           </div>
@@ -158,7 +186,7 @@ const ReadyCheck = ({
             <Progress 
               value={progressPercentage} 
               className="h-1 bg-gray-700" 
-              indicatorClassName="bg-yellow-500" 
+              indicatorClassName={countdownSeconds < 30 ? "bg-red-500" : "bg-yellow-500"} 
             />
           </div>
         </motion.div>
@@ -178,7 +206,7 @@ const ReadyCheck = ({
                 ? 'border-green-500' 
                 : !isPlayerInReadyCheck(participant)
                   ? 'border-orange-500'
-                  : 'border-gray-500'
+                  : isCountdownExpired ? 'border-red-500' : 'border-gray-500'
             }`}
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
@@ -194,6 +222,11 @@ const ReadyCheck = ({
               <div className="flex items-center">
                 <span className="text-orange-500 mr-1 text-xs">В поиске</span>
                 <Loader2 className="animate-spin text-orange-500" size={14} />
+              </div>
+            ) : isCountdownExpired ? (
+              <div className="flex items-center">
+                <span className="text-red-500 mr-1 text-xs">Время истекло</span>
+                <AlertTriangle className="text-red-500" size={18} />
               </div>
             ) : (
               <div className="flex items-center">

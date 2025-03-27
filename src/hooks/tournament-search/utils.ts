@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 import { LobbyParticipant } from "./types";
 
@@ -101,5 +100,45 @@ export const fetchReadyPlayers = async (lobbyId: string) => {
   } catch (error) {
     console.error("[TOURNAMENT-UI] Error in fetchReadyPlayers:", error);
     throw error;
+  }
+};
+
+/**
+ * Ensure participants in a lobby have the correct status
+ * This ensures that all participants who are in 'searching' status
+ * get updated to 'ready' status when the lobby enters ready check mode
+ */
+export const ensureParticipantStatus = async (lobbyId: string): Promise<void> => {
+  try {
+    console.log(`[TOURNAMENT-UI] Ensuring correct participant statuses for lobby ${lobbyId}`);
+    
+    // Get the lobby status
+    const { data: lobby, error: lobbyError } = await supabase
+      .from('tournament_lobbies')
+      .select('status')
+      .eq('id', lobbyId)
+      .single();
+      
+    if (lobbyError) {
+      console.error("[TOURNAMENT-UI] Error fetching lobby status:", lobbyError);
+      return;
+    }
+    
+    // If the lobby is in ready_check status, ensure all participants are in 'ready' status
+    if (lobby.status === 'ready_check') {
+      const { error: updateError } = await supabase
+        .from('lobby_participants')
+        .update({ status: 'ready' })
+        .eq('lobby_id', lobbyId)
+        .eq('status', 'searching');
+        
+      if (updateError) {
+        console.error("[TOURNAMENT-UI] Error updating participant statuses:", updateError);
+      } else {
+        console.log("[TOURNAMENT-UI] Updated participants from 'searching' to 'ready' status in ready check mode");
+      }
+    }
+  } catch (error) {
+    console.error("[TOURNAMENT-UI] Error in ensureParticipantStatus:", error);
   }
 };

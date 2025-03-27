@@ -12,6 +12,15 @@ export interface LobbyParticipant {
   };
 }
 
+export interface LobbyStatus {
+  id: string;
+  status: 'waiting' | 'ready_check' | 'active' | 'completed';
+  current_players: number;
+  max_players: number;
+  tournament_id?: string | null;
+  ready_check_started_at?: string | null;
+}
+
 export interface TournamentSearchState {
   isSearching: boolean;
   lobbyId: string | null;
@@ -24,5 +33,6 @@ export interface TournamentSearchState {
   isCreatingTournament: boolean;
   tournamentId: string | null;
   triggerTournamentCheck?: boolean;
-  currentUserId: string | null; // Добавили новое поле
+  currentUserId: string | null;
+  searchAttempts: number; // Added missing property
 }

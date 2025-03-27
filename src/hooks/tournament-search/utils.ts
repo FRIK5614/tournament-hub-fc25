@@ -51,11 +51,12 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       id: participant.id,
       user_id: participant.user_id,
       lobby_id: lobbyId,
-      status: participant.status as LobbyParticipant['status'],
+      status: participant.status,
       is_ready: participant.is_ready,
       profile: {
+        id: participant.user_id, // Use user_id as profile id
         username: `Player-${participant.user_id.substring(0, 6)}`,
-        avatar_url: null
+        avatar_url: undefined
       }
     }));
     
@@ -70,6 +71,7 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
         
         if (profile) {
           participant.profile = {
+            id: participant.user_id, // Use user_id as profile id
             username: profile.username || `Player-${participant.user_id.substring(0, 6)}`,
             avatar_url: profile.avatar_url
           };

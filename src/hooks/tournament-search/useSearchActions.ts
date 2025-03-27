@@ -20,7 +20,7 @@ export const useSearchActions = (
   const { toast } = useToast();
 
   const handleCancelSearch = useCallback(async () => {
-    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_IS_LOADING', payload: true });
     try {
       const { data: user } = await supabase.auth.getUser();
       if (!user?.user) {
@@ -45,12 +45,12 @@ export const useSearchActions = (
         variant: "destructive",
       });
     } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_IS_LOADING', payload: false });
     }
   }, [state.lobbyId, toast, dispatch]);
   
   const handleReadyCheck = useCallback(async () => {
-    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_IS_LOADING', payload: true });
     try {
       const { data: user } = await supabase.auth.getUser();
       if (!user?.user) {
@@ -73,7 +73,7 @@ export const useSearchActions = (
         variant: "destructive",
       });
     } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_IS_LOADING', payload: false });
     }
   }, [state.lobbyId, toast, dispatch]);
 
@@ -85,7 +85,7 @@ export const useSearchActions = (
     console.log("[TOURNAMENT-UI] handleStartSearch called, isRetry:", isRetry);
     
     // Устанавливаем loading и сбрасываем предыдущее состояние поиска
-    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_IS_LOADING', payload: true });
     if (!isRetry) {
       dispatch({ type: 'RESET_SEARCH' });
     }
@@ -103,7 +103,7 @@ export const useSearchActions = (
       dispatch({ type: 'SET_CURRENT_USER_ID', payload: user.user.id });
 
       // Устанавливаем isSearching=true до вызова API для мгновенного отображения UI
-      dispatch({ type: 'SET_SEARCHING', payload: true });
+      dispatch({ type: 'SET_IS_SEARCHING', payload: true });
 
       // Search for a quick tournament
       const { lobbyId } = await searchForQuickTournament();
@@ -118,7 +118,7 @@ export const useSearchActions = (
       await refreshLobbyData(lobbyId);
       
       // Установка состояний после успешного поиска
-      dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_IS_LOADING', payload: false });
       
       toast({
         title: "Поиск запущен",
@@ -148,7 +148,7 @@ export const useSearchActions = (
           description: error.message || "Не удалось найти лобби. Попробуйте позже.",
           variant: "destructive",
         });
-        dispatch({ type: 'SET_LOADING', payload: false });
+        dispatch({ type: 'SET_IS_LOADING', payload: false });
       }
     }
   }, [toast, state.searchAttempts, dispatch, refreshLobbyData]);

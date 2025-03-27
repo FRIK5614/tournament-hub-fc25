@@ -13,7 +13,10 @@ export type TournamentSearchAction =
   | { type: 'SET_IS_CREATING_TOURNAMENT'; payload: boolean }
   | { type: 'SET_TOURNAMENT_ID'; payload: string | null }
   | { type: 'TRIGGER_TOURNAMENT_CHECK'; payload: boolean }
-  | { type: 'SET_CURRENT_USER_ID'; payload: string | null };  // Добавили новый тип экшена
+  | { type: 'SET_CURRENT_USER_ID'; payload: string | null }
+  | { type: 'RESET_SEARCH' }
+  | { type: 'ADD_READY_PLAYER'; payload: string }
+  | { type: 'SET_SEARCH_ATTEMPTS'; payload: number };
 
 export const initialState: TournamentSearchState = {
   isSearching: false,
@@ -26,7 +29,8 @@ export const initialState: TournamentSearchState = {
   tournamentCreationStatus: '',
   isCreatingTournament: false,
   tournamentId: null,
-  currentUserId: null, // Добавили новое поле
+  currentUserId: null,
+  searchAttempts: 0, // Added searchAttempts with default value
 };
 
 export const tournamentSearchReducer = (
@@ -56,8 +60,21 @@ export const tournamentSearchReducer = (
       return { ...state, tournamentId: action.payload };
     case 'TRIGGER_TOURNAMENT_CHECK':
       return { ...state, triggerTournamentCheck: action.payload };
-    case 'SET_CURRENT_USER_ID': // Обработка нового типа экшена
+    case 'SET_CURRENT_USER_ID':
       return { ...state, currentUserId: action.payload };
+    case 'RESET_SEARCH':
+      return {
+        ...initialState,
+        currentUserId: state.currentUserId, // Keep the user ID
+        searchAttempts: state.searchAttempts // Keep the search attempts count
+      };
+    case 'ADD_READY_PLAYER':
+      return {
+        ...state,
+        readyPlayers: [...state.readyPlayers, action.payload]
+      };
+    case 'SET_SEARCH_ATTEMPTS':
+      return { ...state, searchAttempts: action.payload };
     default:
       return state;
   }

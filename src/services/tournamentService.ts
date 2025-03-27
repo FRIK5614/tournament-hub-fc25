@@ -1,6 +1,6 @@
+
 import { supabase } from "@/integrations/supabase/client";
 
-// Quick Tournament Functions
 export const searchForQuickTournament = async () => {
   const { data: user } = await supabase.auth.getUser();
   

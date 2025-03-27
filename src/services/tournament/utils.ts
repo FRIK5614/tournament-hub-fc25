@@ -119,7 +119,7 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
 };
 
 // Clean up any stale lobby participations for a user
-export async function cleanupStaleLobbyParticipation(userId: string) {
+export async function cleanupStaleLobbies(userId: string) {
   try {
     console.log(`[TOURNAMENT] Cleaning up stale lobby participations for user ${userId}`);
     
@@ -167,3 +167,4 @@ export async function cleanupStaleLobbyParticipation(userId: string) {
     // Don't throw - this is a helper function
   }
 }
+

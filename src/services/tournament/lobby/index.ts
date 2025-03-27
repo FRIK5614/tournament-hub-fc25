@@ -1,5 +1,6 @@
 
 export * from './searchService';
-export * from './leaveService';
+// Export leaveService with renamed export to avoid conflict
+export { leaveQuickTournament as leaveTournamentLobby } from './leaveService';
 export * from './readyCheckService';
 export * from './statusService';

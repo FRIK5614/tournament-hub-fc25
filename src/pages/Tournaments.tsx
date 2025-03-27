@@ -1,10 +1,9 @@
 
 import { useState, useEffect } from 'react';
+import { supabase } from "@/integrations/supabase/client";
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { supabase } from "@/integrations/supabase/client";
 import TournamentHeader from '@/components/tournaments/TournamentHeader';
-import TournamentInfo from '@/components/tournaments/TournamentInfo';
 import TournamentTabs from '@/components/tournaments/TournamentTabs';
 import QuickTournamentSection from '@/components/tournaments/QuickTournamentSection';
 
@@ -13,8 +12,25 @@ const Tournaments = () => {
   const [completedTournaments, setCompletedTournaments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userTournaments, setUserTournaments] = useState<any[]>([]);
 
   useEffect(() => {
+    const fetchUserTournaments = async () => {
+      const { data: user } = await supabase.auth.getUser();
+      
+      if (user?.user) {
+        const { data: participations, error } = await supabase
+          .from('tournament_participants')
+          .select('tournament_id(*, lobby:lobby_id(*))')
+          .eq('user_id', user.user.id)
+          .eq('tournament_id.status', 'active');
+
+        if (participations) {
+          setUserTournaments(participations.map(p => p.tournament_id));
+        }
+      }
+    };
+
     const checkAuth = async () => {
       const { data } = await supabase.auth.getSession();
       setIsLoggedIn(!!data.session);
@@ -22,7 +38,6 @@ const Tournaments = () => {
     
     const fetchTournaments = async () => {
       try {
-        // Fetch active tournaments
         const { data: active } = await supabase
           .from('tournaments')
           .select('*')
@@ -33,7 +48,6 @@ const Tournaments = () => {
           
         setActiveTournaments(active || []);
         
-        // Fetch completed tournaments
         const { data: completed } = await supabase
           .from('tournaments')
           .select('*')
@@ -53,6 +67,7 @@ const Tournaments = () => {
     
     checkAuth();
     fetchTournaments();
+    fetchUserTournaments();
   }, []);
 
   return (
@@ -67,7 +82,29 @@ const Tournaments = () => {
             <QuickTournamentSection isLoggedIn={isLoggedIn} />
             
             <div className="lg:col-span-2">
-              <TournamentInfo />
+              <div className="glass-card p-6">
+                <h3 className="text-xl font-semibold mb-4">Ваши текущие турниры</h3>
+                {userTournaments.length > 0 ? (
+                  <div className="space-y-4">
+                    {userTournaments.map(tournament => (
+                      <div 
+                        key={tournament.id} 
+                        className="flex justify-between items-center bg-fc-accent/10 p-4 rounded"
+                      >
+                        <span>{tournament.title}</span>
+                        <a 
+                          href={`/tournaments/${tournament.id}`} 
+                          className="text-fc-accent hover:underline"
+                        >
+                          Перейти в турнир
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-400">У вас нет активных турниров</p>
+                )}
+              </div>
             </div>
           </div>
           

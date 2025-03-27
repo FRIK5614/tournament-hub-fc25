@@ -116,6 +116,7 @@ export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
 /**
  * Search for an available quick tournament or create a new one
  */
+// Обновляем логику поиска и создания турниров
 export const searchForQuickTournament = async () => {
   try {
     console.log('[TOURNAMENT] Starting search for quick tournament...');
@@ -125,69 +126,23 @@ export const searchForQuickTournament = async () => {
       throw new Error("Необходимо авторизоваться для участия в турнирах");
     }
     
-    console.log(`[TOURNAMENT] User ${user.user.id} searching for quick tournament`);
-    
-    // First, check if user is already in an active lobby
-    const { data: activeParticipation, error: activeError } = await supabase
-      .from('lobby_participants')
-      .select('lobby_id, status')
+    // Проверяем существующие активные турниры пользователя
+    const { data: existingParticipation } = await supabase
+      .from('tournament_participants')
+      .select('tournament_id(id, status)')
       .eq('user_id', user.user.id)
-      .in('status', ['searching', 'ready'])
-      .maybeSingle();
-      
-    if (activeParticipation && !activeError) {
-      // Check if the lobby is still valid
-      const { data: activeLobby, error: lobbyError } = await supabase
-        .from('tournament_lobbies')
-        .select('id, status, current_players, max_players, tournament_id')
-        .eq('id', activeParticipation.lobby_id)
-        .maybeSingle();
-        
-      if (activeLobby && !lobbyError && !activeLobby.tournament_id) {
-        console.log(`[TOURNAMENT] User is already in active lobby ${activeLobby.id} with status ${activeLobby.status}`);
-        
-        // Проверяем, не является ли лобби "зависшим" (с некорректным количеством игроков)
-        const { data: actualParticipants, error: countError } = await supabase
-          .from('lobby_participants')
-          .select('id')
-          .eq('lobby_id', activeLobby.id)
-          .in('status', ['searching', 'ready']);
-          
-        const actualParticipantCount = (actualParticipants || []).length;
-        
-        if (countError) {
-          console.error("[TOURNAMENT] Error counting participants:", countError);
-        } else if (actualParticipantCount !== activeLobby.current_players) {
-          console.log(`[TOURNAMENT] Fixing lobby player count: actual ${actualParticipantCount}, recorded ${activeLobby.current_players}`);
-          
-          // Исправляем количество игроков
-          await supabase
-            .from('tournament_lobbies')
-            .update({ current_players: actualParticipantCount })
-            .eq('id', activeLobby.id);
-        }
-        
-        // Make sure max_players is set to 4
-        if (activeLobby.max_players !== 4) {
-          await supabase
-            .from('tournament_lobbies')
-            .update({ max_players: 4 })
-            .eq('id', activeLobby.id);
-          console.log(`[TOURNAMENT] Fixed max_players for lobby ${activeLobby.id} to 4`);
-        }
-        
-        // Return existing lobby instead of creating a new one
-        return { lobbyId: activeLobby.id };
-      } else {
-        // Clean up the stale participation
-        await cleanupStaleLobbyParticipation(user.user.id);
-      }
-    } else {
-      // Clean up any stale lobbies for this user
-      await cleanupStaleLobbyParticipation(user.user.id);
+      .eq('tournament_id.status', 'active')
+      .single();
+    
+    if (existingParticipation) {
+      console.log(`[TOURNAMENT] Пользователь уже участвует в активном турнире: ${existingParticipation.tournament_id.id}`);
+      return { lobbyId: existingParticipation.tournament_id.id };
     }
     
-    // Try to find or create a lobby with retry
+    // Очищаем старыеlobbyучастия
+    await cleanupStaleLobbyParticipation(user.user.id);
+    
+    // Остальная логика поиска турнира остается прежней
     const findLobbyWithRetry = async (maxRetries = 3): Promise<string> => {
       let retries = 0;
       
@@ -516,5 +471,23 @@ export const leaveQuickTournament = async (lobbyId: string) => {
   } catch (error) {
     logError("leaveQuickTournament", error);
     throw error;
+  }
+};
+
+// Функция для очистки устаревших лобби-участий
+const cleanupStaleLobbyParticipation = async (userId: string) => {
+  try {
+    // Удаляем участия в лобби со статусом 'waiting' или 'ready_check'
+    const { error } = await supabase
+      .from('lobby_participants')
+      .delete()
+      .eq('user_id', userId)
+      .in('status', ['searching', 'ready']);
+    
+    if (error) {
+      console.error('[TOURNAMENT] Ошибка очистки участий:', error);
+    }
+  } catch (error) {
+    console.error('[TOURNAMENT] Критическая ошибка очистки:', error);
   }
 };

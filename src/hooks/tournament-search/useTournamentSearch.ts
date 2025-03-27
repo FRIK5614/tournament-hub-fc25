@@ -88,16 +88,20 @@ export const useTournamentSearch = () => {
     refreshLobbyData
   );
   
+  // Fix: Convert the trigger function to return a Promise
+  const triggerTournamentCheck = useCallback(async (): Promise<void> => {
+    dispatch(prevState => ({
+      ...prevState,
+      checkTournamentTrigger: true
+    }));
+    return Promise.resolve();
+  }, []);
+  
   useReadyCheck(
     state, 
     dispatch as unknown as React.Dispatch<TournamentSearchAction>, 
     handleCancelSearch, 
-    () => {
-      dispatch(prevState => ({
-        ...prevState,
-        checkTournamentTrigger: true
-      }));
-    }
+    triggerTournamentCheck
   );
   
   const { checkTournamentCreation } = useTournamentCreation(

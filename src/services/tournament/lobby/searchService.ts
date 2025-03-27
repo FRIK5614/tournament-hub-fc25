@@ -70,7 +70,7 @@ export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
       }))
     );
     
-    // Update lobby player count
+    // Update lobby player count (без изменения max_players)
     const { error: updateError } = await supabase
       .from('tournament_lobbies')
       .update({ current_players: count })
@@ -84,7 +84,7 @@ export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
     if (count === 4) {
       const { data: lobbyData } = await supabase
         .from('tournament_lobbies')
-        .select('status, tournament_id')
+        .select('status, tournament_id, max_players')
         .eq('id', lobbyId)
         .single();
         
@@ -191,16 +191,26 @@ export const searchForQuickTournament = async () => {
         });
     }
     
-    // Get lobby status
+    // Get lobby status and make sure max_players is always 4
     const { data: lobbyData, error: lobbyError } = await supabase
       .from('tournament_lobbies')
-      .select('status, current_players')
+      .select('status, current_players, max_players')
       .eq('id', lobbyId)
       .single();
       
     if (lobbyError) {
       console.error(`[TOURNAMENT] Error fetching lobby data:`, lobbyError);
       throw lobbyError;
+    }
+    
+    // Убедимся, что max_players всегда равно 4
+    if (lobbyData?.max_players !== 4) {
+      await supabase
+        .from('tournament_lobbies')
+        .update({ max_players: 4 })
+        .eq('id', lobbyId);
+      
+      console.log(`[TOURNAMENT] Fixed max_players for lobby ${lobbyId} to 4`);
     }
     
     console.log(`[TOURNAMENT] Lobby ${lobbyId} status: ${lobbyData?.status}, players: ${lobbyData?.current_players}/4`);

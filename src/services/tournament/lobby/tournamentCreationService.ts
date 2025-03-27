@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 /**
@@ -9,13 +8,22 @@ export const createTournamentViaRPC = async (lobbyId: string) => {
     // First check if tournament already exists
     const { data: existingLobby } = await supabase
       .from('tournament_lobbies')
-      .select('tournament_id')
+      .select('tournament_id, max_players')
       .eq('id', lobbyId)
       .maybeSingle();
       
     if (existingLobby?.tournament_id) {
       console.log(`[TOURNAMENT] Tournament already exists: ${existingLobby.tournament_id}`);
       return { tournamentId: existingLobby.tournament_id, created: false };
+    }
+    
+    // Проверяем, что max_players = 4
+    if (existingLobby && existingLobby.max_players !== 4) {
+      console.log(`[TOURNAMENT] Fixing max_players for lobby ${lobbyId} to 4`);
+      await supabase
+        .from('tournament_lobbies')
+        .update({ max_players: 4 })
+        .eq('id', lobbyId);
     }
     
     // Verify authentication before creating tournament
@@ -70,13 +78,22 @@ export const createTournamentManually = async (lobbyId: string) => {
     // First check if tournament already exists
     const { data: existingLobby } = await supabase
       .from('tournament_lobbies')
-      .select('tournament_id')
+      .select('tournament_id, max_players')
       .eq('id', lobbyId)
       .maybeSingle();
       
     if (existingLobby?.tournament_id) {
       console.log(`[TOURNAMENT] Tournament already exists: ${existingLobby.tournament_id}`);
       return { tournamentId: existingLobby.tournament_id, created: false };
+    }
+    
+    // Проверяем, что max_players = 4
+    if (existingLobby && existingLobby.max_players !== 4) {
+      console.log(`[TOURNAMENT] Fixing max_players for lobby ${lobbyId} to 4`);
+      await supabase
+        .from('tournament_lobbies')
+        .update({ max_players: 4 })
+        .eq('id', lobbyId);
     }
     
     // Verify authentication before creating tournament
@@ -179,13 +196,22 @@ export const createTournamentWithRetry = async (lobbyId: string) => {
     // First check if tournament already exists
     const { data: existingLobby } = await supabase
       .from('tournament_lobbies')
-      .select('tournament_id')
+      .select('tournament_id, max_players')
       .eq('id', lobbyId)
       .maybeSingle();
       
     if (existingLobby?.tournament_id) {
       console.log(`[TOURNAMENT] Tournament already exists: ${existingLobby.tournament_id}`);
       return { tournamentId: existingLobby.tournament_id, created: false };
+    }
+    
+    // Проверяем, что max_players = 4
+    if (existingLobby && existingLobby.max_players !== 4) {
+      console.log(`[TOURNAMENT] Fixing max_players for lobby ${lobbyId} to 4`);
+      await supabase
+        .from('tournament_lobbies')
+        .update({ max_players: 4 })
+        .eq('id', lobbyId);
     }
     
     // Сначала проверим, все ли игроки действительно готовы

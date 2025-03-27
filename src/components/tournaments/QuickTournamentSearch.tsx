@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +17,6 @@ const QuickTournamentSearch = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Get and store the current user ID on component mount
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -30,16 +28,14 @@ const QuickTournamentSearch = () => {
     fetchUser();
   }, []);
 
-  // Subscribe to lobby changes when we have a lobbyId
   useEffect(() => {
     if (!lobbyId) return;
 
     const fetchLobbyParticipants = async () => {
       try {
-        // Get the current lobby information with its current player count
         const { data: lobbyData, error: lobbyError } = await supabase
           .from('tournament_lobbies')
-          .select('current_players, status')
+          .select('current_players, status, max_players')
           .eq('id', lobbyId)
           .single();
         
@@ -48,11 +44,10 @@ const QuickTournamentSearch = () => {
           return;
         }
         
-        if (lobbyData.status === 'ready_check') {
-          setReadyCheckActive(true);
-        }
+        console.log("Lobby data:", lobbyData);
         
-        // Get all participants (don't filter by status)
+        setReadyCheckActive(lobbyData.status === 'ready_check');
+        
         const { data, error } = await supabase
           .from('lobby_participants')
           .select(`
@@ -77,7 +72,6 @@ const QuickTournamentSearch = () => {
 
     fetchLobbyParticipants();
 
-    // Subscribe to ALL changes to lobby_participants (additions and removals)
     const lobbyChannel = supabase
       .channel('lobby_changes')
       .on('postgres_changes', {
@@ -91,7 +85,6 @@ const QuickTournamentSearch = () => {
       })
       .subscribe();
       
-    // Subscribe to tournament_lobbies changes to detect ready check and tournament start
     const lobbyStatusChannel = supabase
       .channel('lobby_status_changes')
       .on('postgres_changes', {
@@ -106,8 +99,13 @@ const QuickTournamentSearch = () => {
         if (newStatus === 'ready_check') {
           setReadyCheckActive(true);
           setCountdownSeconds(30); // Reset countdown for ready check
+          
+          toast({
+            title: "Игроки найдены!",
+            description: "Подтвердите свою готовность к началу турнира.",
+            variant: "default",
+          });
         } else if (newStatus === 'active') {
-          // Tournament has started, navigate to the tournament page
           if (payload.new.tournament_id) {
             toast({
               title: "Турнир начинается!",
@@ -119,19 +117,16 @@ const QuickTournamentSearch = () => {
           }
         }
         
-        // Refresh participants when status changes
         fetchLobbyParticipants();
       })
       .subscribe();
       
-    // Clean up subscriptions
     return () => {
       supabase.removeChannel(lobbyChannel);
       supabase.removeChannel(lobbyStatusChannel);
     };
   }, [lobbyId, navigate, toast]);
 
-  // Retry search if it fails
   useEffect(() => {
     if (isSearching && !lobbyId && searchAttempts > 0) {
       const retryTimer = setTimeout(() => {
@@ -142,7 +137,6 @@ const QuickTournamentSearch = () => {
     }
   }, [isSearching, lobbyId, searchAttempts]);
 
-  // Countdown timer for ready check
   useEffect(() => {
     if (!readyCheckActive || countdownSeconds <= 0) return;
     
@@ -153,7 +147,6 @@ const QuickTournamentSearch = () => {
     return () => clearTimeout(timer);
   }, [readyCheckActive, countdownSeconds]);
 
-  // If countdown reaches 0, cancel search
   useEffect(() => {
     if (readyCheckActive && countdownSeconds === 0) {
       handleCancelSearch();
@@ -170,7 +163,6 @@ const QuickTournamentSearch = () => {
       setIsSearching(true);
       
       if (!isRetry) {
-        // Only show toast on initial search, not on retries
         toast({
           title: "Поиск турнира",
           description: "Поиск быстрого турнира начат. Ожидание других игроков...",
@@ -181,7 +173,6 @@ const QuickTournamentSearch = () => {
       const newLobbyId = await searchForQuickTournament();
       setLobbyId(newLobbyId);
       
-      // Immediately after joining, set lobbyParticipants to include current user
       const { data: user } = await supabase.auth.getUser();
       if (user?.user) {
         const { data: profile } = await supabase
@@ -204,11 +195,10 @@ const QuickTournamentSearch = () => {
         }
       }
       
-      setSearchAttempts(0); // Reset attempts on success
+      setSearchAttempts(0);
     } catch (error: any) {
       console.error("Error searching for tournament:", error);
       
-      // Only show error toast on first few attempts
       if (searchAttempts < 3) {
         toast({
           title: "Повторная попытка поиска",
@@ -217,7 +207,6 @@ const QuickTournamentSearch = () => {
         });
       }
       
-      // Increment search attempts for retry logic
       setSearchAttempts(prev => prev + 1);
     }
   };
@@ -230,7 +219,6 @@ const QuickTournamentSearch = () => {
     }
     
     try {
-      // Update participant status to 'left'
       const { data: user } = await supabase.auth.getUser();
       if (user?.user) {
         await supabase

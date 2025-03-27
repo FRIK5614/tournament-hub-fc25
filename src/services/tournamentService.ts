@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 export const searchForQuickTournament = async () => {
@@ -45,6 +44,19 @@ export const searchForQuickTournament = async () => {
         console.error("Ошибка при присоединении к лобби:", joinError);
         throw new Error("Не удалось присоединиться к турниру. Пожалуйста, попробуйте снова.");
       }
+    }
+    
+    // Fetch the current lobby status to check if ready_check is needed
+    const { data: lobbyStatus, error: statusError } = await supabase
+      .from('tournament_lobbies')
+      .select('status, current_players')
+      .eq('id', lobbyId)
+      .single();
+    
+    if (statusError) {
+      console.error("Ошибка при получении статуса лобби:", statusError);
+    } else {
+      console.log("Current lobby status:", lobbyStatus);
     }
     
     return lobbyId;

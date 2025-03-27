@@ -14,6 +14,7 @@ import { TournamentSearchAction, initialState } from './reducer';
 import { useSearchActions } from './useSearchActions';
 import { useReadyCheck } from './useReadyCheck';
 import { useTournamentCreation } from './useTournamentCreation';
+import { useSearchSubscriptions } from './useSearchSubscriptions';
 
 export const useTournamentSearch = () => {
   const [state, dispatch] = useState<TournamentSearchState>(initialState);
@@ -42,6 +43,7 @@ export const useTournamentSearch = () => {
 
   const refreshLobbyData = useCallback(async (lobbyId: string) => {
     try {
+      console.log("[TOURNAMENT-UI] Refreshing lobby data for", lobbyId);
       const lobbyStatus = await fetchLobbyStatus(lobbyId);
       dispatch(prevState => ({
         ...prevState,
@@ -50,6 +52,7 @@ export const useTournamentSearch = () => {
       }));
 
       const participants = await fetchLobbyParticipants(lobbyId);
+      console.log("[TOURNAMENT-UI] Fetched participants:", participants);
       dispatch(prevState => ({
         ...prevState,
         lobbyParticipants: participants
@@ -79,6 +82,14 @@ export const useTournamentSearch = () => {
     }));
     return Promise.resolve();
   }, []);
+  
+  // Setup realtime subscriptions
+  useSearchSubscriptions(
+    state.isSearching,
+    state.lobbyId,
+    refreshLobbyData,
+    dispatch as unknown as React.Dispatch<TournamentSearchAction>
+  );
   
   useReadyCheck(
     state, 

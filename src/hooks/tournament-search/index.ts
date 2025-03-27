@@ -1,3 +1,4 @@
 
 export { useTournamentSearch } from './useTournamentSearch';
-export type { LobbyParticipant } from './types';
+export type { TournamentSearchState, LobbyParticipant } from './types';
+export { tournamentSearchReducer, initialState } from './reducer';

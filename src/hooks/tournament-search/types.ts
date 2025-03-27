@@ -24,6 +24,8 @@ export interface TournamentSearchState {
   isCreatingTournament: boolean;
   tournamentCreationStatus: string;
   creationAttempts: number;
+  checkTournamentTrigger: boolean;
+  tournamentId: string | null;
 }
 
 export interface TournamentSearchActions {
@@ -33,4 +35,4 @@ export interface TournamentSearchActions {
   isUserReady: () => boolean;
 }
 
-export interface UseTournamentSearchResult extends Omit<TournamentSearchState, 'searchAttempts' | 'creationAttempts'>, TournamentSearchActions {}
+export interface UseTournamentSearchResult extends Omit<TournamentSearchState, 'searchAttempts' | 'creationAttempts' | 'checkTournamentTrigger'>, TournamentSearchActions {}

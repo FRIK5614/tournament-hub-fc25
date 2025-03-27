@@ -1,5 +1,5 @@
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { checkAllPlayersReady } from '@/services/tournament';
@@ -14,10 +14,36 @@ export function useTournamentCreation(
   const navigate = useNavigate();
   const { toast } = useToast();
   
+  // Monitor for the trigger to check tournament creation
+  useEffect(() => {
+    if (state.checkTournamentTrigger && !state.isCreatingTournament) {
+      checkTournamentCreation();
+      // Reset the trigger
+      dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: false });
+    }
+  }, [state.checkTournamentTrigger]);
+  
+  // If we have a tournament ID, navigate to it
+  useEffect(() => {
+    if (state.tournamentId) {
+      console.log(`[TOURNAMENT-UI] Tournament ID is set, navigating to /tournaments/${state.tournamentId}`);
+      
+      toast({
+        title: "Турнир начинается!",
+        description: "Все игроки готовы. Переход к турниру...",
+        variant: "default",
+      });
+      
+      setTimeout(() => {
+        navigate(`/tournaments/${state.tournamentId}`);
+      }, 1000);
+    }
+  }, [state.tournamentId, navigate, toast]);
+  
   const checkTournamentCreation = useCallback(async () => {
-    const { lobbyId, isCreatingTournament, creationAttempts } = state;
+    const { lobbyId, isCreatingTournament, creationAttempts, tournamentId } = state;
     
-    if (!lobbyId || isCreatingTournament) return;
+    if (!lobbyId || isCreatingTournament || tournamentId) return;
     
     console.log(`[TOURNAMENT-UI] Checking tournament creation for lobby ${lobbyId}`);
     
@@ -32,16 +58,7 @@ export function useTournamentCreation(
       if (result.allReady && result.tournamentId) {
         console.log(`[TOURNAMENT-UI] All players ready, tournament created: ${result.tournamentId}`);
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'created' });
-        
-        toast({
-          title: "Турнир начинается!",
-          description: "Все игроки готовы. Переход к турниру...",
-          variant: "default",
-        });
-        
-        setTimeout(() => {
-          navigate(`/tournaments/${result.tournamentId}`);
-        }, 1000);
+        dispatch({ type: 'SET_TOURNAMENT_ID', payload: result.tournamentId });
       } else if (result.allReady && !result.tournamentId) {
         console.log(`[TOURNAMENT-UI] All players are ready but tournament creation failed`);
         dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'failed' });
@@ -67,7 +84,7 @@ export function useTournamentCreation(
           setTimeout(() => {
             dispatch({ type: 'SET_CREATING_TOURNAMENT', payload: false });
             dispatch({ type: 'SET_TOURNAMENT_CREATION_STATUS', payload: 'waiting' });
-            checkTournamentCreation();
+            dispatch({ type: 'TRIGGER_TOURNAMENT_CHECK', payload: true });
           }, 2000);
         }
       } else {

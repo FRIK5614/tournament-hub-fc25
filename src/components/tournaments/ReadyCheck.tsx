@@ -23,6 +23,11 @@ const ReadyCheck = ({
   onReady,
   onCancel
 }: ReadyCheckProps) => {
+  // Helper to determine if player is ready
+  const isPlayerReady = (participant: LobbyParticipant) => {
+    return readyPlayers.includes(participant.user_id);
+  };
+
   // Helper to determine if player is in ready check
   const isPlayerInReadyCheck = (participant: LobbyParticipant) => {
     return participant.status === 'ready';
@@ -64,14 +69,19 @@ const ReadyCheck = ({
 
   // Log participants and ready players for debugging
   console.log("[TOURNAMENT-UI] ReadyCheck rendering with participants:", 
-    lobbyParticipants.map(p => ({ id: p.user_id, ready: p.is_ready, status: p.status }))
+    lobbyParticipants.map(p => ({ id: p.user_id, ready: isPlayerReady(p), status: p.status }))
   );
   console.log("[TOURNAMENT-UI] ReadyCheck readyPlayers:", readyPlayers);
+
+  // Count ready players for debugging
+  const readyCount = lobbyParticipants.filter(p => isPlayerReady(p)).length;
+  const totalCount = lobbyParticipants.length;
+  console.log(`[TOURNAMENT-UI] Ready players: ${readyCount}/${totalCount}`);
 
   return (
     <div className="text-center">
       <h4 className="text-lg font-medium mb-2">Все игроки найдены!</h4>
-      <p className="text-gray-300 mb-2">Подтвердите готовность начать турнир</p>
+      <p className="text-gray-300 mb-2">Подтвердите готовность начать турнир ({readyCount}/{totalCount})</p>
       
       <div className="flex justify-center mb-4">
         <div className="glass-card bg-yellow-500/20 border-yellow-500 px-3 py-1 rounded-full text-sm">
@@ -84,7 +94,7 @@ const ReadyCheck = ({
           <div 
             key={idx} 
             className={`glass-card p-3 flex items-center justify-between ${
-              readyPlayers.includes(participant.user_id) 
+              isPlayerReady(participant) 
                 ? 'border-green-500' 
                 : !isPlayerInReadyCheck(participant)
                   ? 'border-yellow-500'
@@ -92,7 +102,7 @@ const ReadyCheck = ({
             }`}
           >
             <span>{participant.profile?.username || 'Игрок'}</span>
-            {readyPlayers.includes(participant.user_id) ? (
+            {isPlayerReady(participant) ? (
               <Check className="text-green-500" size={18} />
             ) : !isPlayerInReadyCheck(participant) ? (
               <div className="flex items-center">

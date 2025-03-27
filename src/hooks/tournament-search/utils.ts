@@ -1,192 +1,121 @@
 
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from '@/integrations/supabase/client';
 import { LobbyParticipant } from './types';
 
+/**
+ * Fetch status for a tournament lobby
+ */
 export const fetchLobbyStatus = async (lobbyId: string) => {
-  console.log(`[TOURNAMENT-UI] Fetching status for lobby ${lobbyId}`);
+  const { data, error } = await supabase
+    .from('tournament_lobbies')
+    .select('status, current_players, max_players, tournament_id')
+    .eq('id', lobbyId)
+    .single();
   
-  const fetchWithRetry = async (retries = 2) => {
-    try {
-      const { data: lobbyData, error: lobbyError } = await supabase
-        .from('tournament_lobbies')
-        .select('status, current_players, max_players, tournament_id')
-        .eq('id', lobbyId)
-        .maybeSingle();
-      
-      if (lobbyError) {
-        throw lobbyError;
-      }
-      
-      if (!lobbyData) {
-        console.warn("[TOURNAMENT-UI] No lobby data returned");
-        return { status: 'waiting', current_players: 0, max_players: 4, tournament_id: null };
-      }
-      
-      console.log(`[TOURNAMENT-UI] Lobby data: status=${lobbyData.status}, players=${lobbyData.current_players}/${lobbyData.max_players}, tournament=${lobbyData.tournament_id || 'none'}`);
-      
-      // If lobby is in ready_check, double-check participants status
-      if (lobbyData.status === 'ready_check') {
-        console.log("[TOURNAMENT-UI] Lobby in ready_check state, ensuring participants have correct status");
-        try {
-          // Ensure all participants have status 'ready' when in ready check mode
-          await supabase
-            .from('lobby_participants')
-            .update({ status: 'ready' })
-            .eq('lobby_id', lobbyId)
-            .in('status', ['searching']);
-        } catch (err) {
-          console.error("[TOURNAMENT-UI] Error updating participant statuses in ready check:", err);
-        }
-      }
-      
-      return lobbyData;
-    } catch (error) {
-      console.error("[TOURNAMENT-UI] Error in fetchLobbyStatus:", error);
-      if (retries > 0) {
-        console.log(`[TOURNAMENT-UI] Retrying fetchLobbyStatus, ${retries} retries left`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return fetchWithRetry(retries - 1);
-      }
-      // Return default values to prevent app from crashing
-      return { status: 'waiting', current_players: 0, max_players: 4, tournament_id: null };
-    }
-  };
+  if (error) {
+    console.error("[TOURNAMENT-UI] Error fetching lobby status:", error);
+    throw error;
+  }
   
-  return fetchWithRetry();
+  return data || { status: 'waiting', current_players: 0, max_players: 4, tournament_id: null };
 };
 
+/**
+ * Fetch participants in a tournament lobby
+ */
 export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyParticipant[]> => {
-  const fetchWithRetry = async (retries = 2): Promise<LobbyParticipant[]> => {
-    try {
-      console.log(`[TOURNAMENT-UI] Fetching participants for lobby ${lobbyId}`);
-      
-      const { data: participants, error: participantsError } = await supabase
-        .from('lobby_participants')
-        .select('id, user_id, lobby_id, is_ready, status')
-        .eq('lobby_id', lobbyId)
-        .in('status', ['searching', 'ready']);
-      
-      if (participantsError) {
-        throw participantsError;
-      }
-      
-      const actualParticipants = participants || [];
-      console.log(`[TOURNAMENT-UI] Found ${actualParticipants.length} active participants in lobby ${lobbyId}`);
-      
-      // Log details for debugging
-      actualParticipants.forEach(p => {
-        console.log(`[TOURNAMENT-UI] Participant in lobby ${lobbyId}: user_id=${p.user_id}, is_ready=${p.is_ready}, status=${p.status}`);
-      });
-      
-      // Log ready players for debugging
-      const readyPlayers = actualParticipants.filter(p => p.is_ready).map(p => p.user_id);
-      console.log(`[TOURNAMENT-UI] Ready players in lobby ${lobbyId}:`, readyPlayers);
-      
-      if (actualParticipants.length > 0) {
-        // Get user IDs array
-        const userIds = actualParticipants.map(p => p.user_id);
-        
-        try {
-          // Fetch profiles in a separate try/catch to handle potential errors
-          const { data: profiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url')
-            .in('id', userIds);
-            
-          if (profilesError) {
-            throw profilesError;
-          }
-          
-          // Map participants with their profiles
-          return actualParticipants.map(participant => {
-            const profile = profiles?.find(p => p.id === participant.user_id);
-            return {
-              ...participant,
-              profile: profile ? { 
-                username: profile.username || 'Игрок', 
-                avatar_url: profile.avatar_url 
-              } : { 
-                username: 'Игрок', 
-                avatar_url: null 
-              }
-            };
-          });
-        } catch (err) {
-          console.error("[TOURNAMENT-UI] Error processing profiles:", err);
-          // Return participants without profiles if profiles fetch fails
-          return actualParticipants.map(p => ({
-            ...p,
-            profile: { username: 'Игрок', avatar_url: null }
-          }));
-        }
-      }
-      
-      return [];
-    } catch (error) {
-      console.error("[TOURNAMENT-UI] Error in fetchLobbyParticipants:", error);
-      if (retries > 0) {
-        console.log(`[TOURNAMENT-UI] Retrying fetchLobbyParticipants, ${retries} retries left`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return fetchWithRetry(retries - 1);
-      }
-      return [];
-    }
-  };
+  const { data, error } = await supabase
+    .from('lobby_participants')
+    .select(`
+      id, 
+      user_id, 
+      lobby_id, 
+      is_ready, 
+      status,
+      profile:profiles!inner(username, avatar_url)
+    `)
+    .eq('lobby_id', lobbyId)
+    .in('status', ['searching', 'ready']);
   
-  return fetchWithRetry();
+  if (error) {
+    console.error("[TOURNAMENT-UI] Error fetching lobby participants:", error);
+    throw error;
+  }
+  
+  return data || [];
 };
 
-// Add a new function to fetch ready players directly
+/**
+ * Fetch players who are marked as ready
+ */
 export const fetchReadyPlayers = async (lobbyId: string): Promise<string[]> => {
   try {
-    console.log(`[TOURNAMENT-UI] Fetching ready players for lobby ${lobbyId}`);
-    
-    const { data, error } = await supabase
+    // First try to get participants with is_ready=true
+    const { data: readyData, error: readyError } = await supabase
       .from('lobby_participants')
       .select('user_id')
       .eq('lobby_id', lobbyId)
       .eq('is_ready', true)
-      .in('status', ['searching', 'ready']);
-    
-    if (error) {
-      console.error("[TOURNAMENT-UI] Error fetching ready players:", error);
-      return [];
+      .eq('status', 'ready');
+      
+    if (readyError) {
+      console.error("[TOURNAMENT-UI] Error fetching ready players:", readyError);
+      throw readyError;
     }
     
-    const readyPlayers = data?.map(p => p.user_id) || [];
-    console.log(`[TOURNAMENT-UI] Found ${readyPlayers.length} ready players in lobby ${lobbyId}:`, readyPlayers);
-    
-    return readyPlayers;
+    // Map the ready participants to an array of user IDs
+    return (readyData || []).map(p => p.user_id);
   } catch (error) {
     console.error("[TOURNAMENT-UI] Error in fetchReadyPlayers:", error);
-    return [];
+    throw error;
   }
 };
 
-// Function to ensure all participants have correct status in ready check
-export const ensureParticipantStatus = async (lobbyId: string): Promise<void> => {
+/**
+ * Force-update status of lobby participants to ensure consistency
+ */
+export const ensureParticipantStatus = async (lobbyId: string) => {
   try {
-    console.log(`[TOURNAMENT-UI] Ensuring participant statuses for lobby ${lobbyId}`);
-    
-    // First check lobby status
-    const { data: lobby } = await supabase
+    // First check if this lobby is in ready_check mode
+    const { data: lobby, error: lobbyError } = await supabase
       .from('tournament_lobbies')
       .select('status')
       .eq('id', lobbyId)
-      .maybeSingle();
+      .single();
       
+    if (lobbyError) {
+      console.error("[TOURNAMENT-UI] Error checking lobby status:", lobbyError);
+      return;
+    }
+    
+    // If lobby is in ready_check mode, ensure all participants have status 'ready'
     if (lobby?.status === 'ready_check') {
-      // Update all participants to 'ready' status when in ready check
-      const { error } = await supabase
+      const { data: participants, error: participantsError } = await supabase
         .from('lobby_participants')
-        .update({ status: 'ready' })
+        .select('id, status')
         .eq('lobby_id', lobbyId)
-        .in('status', ['searching']);
+        .eq('status', 'searching');
         
-      if (error) {
-        console.error("[TOURNAMENT-UI] Error updating participant statuses:", error);
-      } else {
-        console.log("[TOURNAMENT-UI] Successfully updated participant statuses to 'ready'");
+      if (participantsError) {
+        console.error("[TOURNAMENT-UI] Error fetching participants to update:", participantsError);
+        return;
+      }
+      
+      // Force-update any participants still in 'searching' status to 'ready'
+      if (participants && participants.length > 0) {
+        console.log(`[TOURNAMENT-UI] Found ${participants.length} participants that need status update to 'ready'`);
+        
+        const { error: updateError } = await supabase
+          .from('lobby_participants')
+          .update({ status: 'ready' })
+          .eq('lobby_id', lobbyId)
+          .eq('status', 'searching');
+          
+        if (updateError) {
+          console.error("[TOURNAMENT-UI] Error updating participant statuses:", updateError);
+        } else {
+          console.log('[TOURNAMENT-UI] Successfully updated participant statuses to ready');
+        }
       }
     }
   } catch (error) {

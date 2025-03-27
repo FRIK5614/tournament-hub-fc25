@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
 
@@ -77,9 +78,15 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
     if (count === 4) {
       const { data: lobbyData } = await supabase
         .from('tournament_lobbies')
-        .select('status')
+        .select('status, tournament_id')
         .eq('id', lobbyId)
         .single();
+        
+      // Check if lobby has a tournament already - if so, don't mess with the status
+      if (lobbyData?.tournament_id) {
+        console.log(`[TOURNAMENT] Lobby ${lobbyId} already has tournament ${lobbyData.tournament_id}, skipping status update`);
+        return;
+      }
         
       if (lobbyData?.status === 'waiting') {
         console.log(`[TOURNAMENT] Lobby ${lobbyId} has 4 players, updating to ready_check`);
@@ -253,6 +260,32 @@ export const searchForQuickTournament = async () => {
     
     // Update the lobby's current_players count
     await updateLobbyPlayerCount(lobbyId);
+    
+    // Add a slight delay and verify the player was added correctly
+    await delay(500);
+    
+    const { data: verifyParticipant } = await supabase
+      .from('lobby_participants')
+      .select('id, status')
+      .eq('lobby_id', lobbyId)
+      .eq('user_id', user.user.id)
+      .maybeSingle();
+      
+    if (!verifyParticipant) {
+      console.warn(`[TOURNAMENT] Player doesn't appear to be in lobby after addition, retrying`);
+      
+      // Try to add again if verification failed
+      await supabase
+        .from('lobby_participants')
+        .insert({
+          lobby_id: lobbyId,
+          user_id: user.user.id,
+          status: initialStatus,
+          is_ready: false
+        })
+        .onConflict(['lobby_id', 'user_id'])
+        .merge();
+    }
     
     return { lobbyId };
   } catch (error) {

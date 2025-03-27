@@ -92,7 +92,27 @@ export const useSearchActions = (
       if (!user?.user) {
         throw new Error("Пользователь не авторизован");
       }
+      
+      console.log(`[TOURNAMENT-UI] Current user ID: ${user.user.id}`);
       dispatch({ type: 'SET_CURRENT_USER_ID', payload: user.user.id });
+
+      // First check if user already has a profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .eq('id', user.user.id)
+        .maybeSingle();
+        
+      if (profileError || !profileData) {
+        console.log(`[TOURNAMENT-UI] Creating profile for user ${user.user.id}`);
+        // Create a profile if one doesn't exist
+        await supabase
+          .from('profiles')
+          .insert({
+            id: user.user.id,
+            username: user.user.email?.split('@')[0] || `Player-${user.user.id.substring(0, 6)}`
+          });
+      }
 
       // Search for a quick tournament
       const { lobbyId } = await searchForQuickTournament();
@@ -110,6 +130,7 @@ export const useSearchActions = (
         dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 30 });  // Default countdown value
 
         const initialParticipants = await fetchLobbyParticipants(lobbyId);
+        console.log(`[TOURNAMENT-UI] Initial participants:`, initialParticipants);
         dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: initialParticipants });
       } catch (error) {
         console.error("[TOURNAMENT-UI] Error fetching initial lobby data:", error);

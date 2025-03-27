@@ -42,7 +42,7 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     throw error;
   }
   
-  console.log(`[TOURNAMENT-UI] Found ${data?.length || 0} participants for lobby ${lobbyId}`);
+  console.log(`[TOURNAMENT-UI] Found ${data?.length || 0} participants for lobby ${lobbyId}`, data);
   
   // Process the data to ensure it matches the LobbyParticipant type
   return parseLobbyParticipants(data || []);
@@ -58,6 +58,16 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
                            typeof profile === 'object' && 
                            profile !== null;
     
+    // Debug information for profile parsing
+    console.log("[TOURNAMENT-UI] Parsing participant:", {
+      id: participant.id, 
+      userId: participant.user_id,
+      hasProfile: !!profile,
+      profileType: profile ? typeof profile : 'undefined',
+      profileIsNull: profile === null,
+      profileData: profile
+    });
+    
     return {
       id: participant.id,
       user_id: participant.user_id,
@@ -65,10 +75,10 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
       status: participant.status || 'searching',
       is_ready: participant.is_ready || false,
       profile: {
-        username: hasValidProfile && 'username' in (profile as Record<string, any>)
+        username: hasValidProfile && profile && 'username' in (profile as Record<string, any>)
                  ? String((profile as Record<string, any>).username || 'Unknown Player')
                  : 'Unknown Player',
-        avatar_url: hasValidProfile && 'avatar_url' in (profile as Record<string, any>)
+        avatar_url: hasValidProfile && profile && 'avatar_url' in (profile as Record<string, any>)
                    ? ((profile as Record<string, any>).avatar_url as string | null) || null
                    : null
       }
@@ -172,9 +182,12 @@ export const enrichParticipantsWithProfiles = async (participants: any[]): Promi
  */
 export const updateLobbyPlayerCount = async (lobbyId: string) => {
   try {
+    // Add a delay to ensure database consistency
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     const { data: participants, error: countError } = await supabase
       .from('lobby_participants')
-      .select('id')
+      .select('id, user_id, status')
       .eq('lobby_id', lobbyId)
       .in('status', ['searching', 'ready']);
       
@@ -186,6 +199,16 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
     const count = participants?.length || 0;
     
     console.log(`[TOURNAMENT-UI] Updating lobby ${lobbyId} player count to ${count}`);
+    console.log('[TOURNAMENT-UI] Participants found:', participants);
+    
+    // Get current state of the lobby
+    const { data: lobbyData } = await supabase
+      .from('tournament_lobbies')
+      .select('current_players, status')
+      .eq('id', lobbyId)
+      .single();
+      
+    console.log(`[TOURNAMENT-UI] Current lobby state:`, lobbyData);
     
     await supabase
       .from('tournament_lobbies')
@@ -217,5 +240,32 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
     }
   } catch (error) {
     console.error('[TOURNAMENT-UI] Error in updateLobbyPlayerCount:', error);
+  }
+};
+
+// New helper function to reset the state of the lobby for debugging purposes
+export const resetLobbyForDebugging = async (lobbyId: string) => {
+  try {
+    console.log(`[TOURNAMENT-UI] Attempting to reset lobby ${lobbyId} for debugging`);
+    
+    // Update lobby status back to waiting
+    await supabase
+      .from('tournament_lobbies')
+      .update({ 
+        status: 'waiting', 
+        ready_check_started_at: null,
+        current_players: 0
+      })
+      .eq('id', lobbyId);
+      
+    console.log(`[TOURNAMENT-UI] Lobby status reset to waiting`);
+    
+    // Refresh the actual player count
+    await updateLobbyPlayerCount(lobbyId);
+    
+    return true;
+  } catch (error) {
+    console.error('[TOURNAMENT-UI] Error resetting lobby:', error);
+    return false;
   }
 };

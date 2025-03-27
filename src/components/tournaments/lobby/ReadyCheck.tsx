@@ -107,7 +107,7 @@ const ReadyCheck = ({
           {tournamentCreationStatus === 'error' && (
             <div className="text-red-500 flex items-center justify-center">
               <X className="mr-2" size={16} />
-              Ошибка: недостаточно игроков. Пробуем еще...
+              Ошибка: недостаточно игроков для создания турнира
             </div>
           )}
         </motion.div>

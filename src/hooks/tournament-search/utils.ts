@@ -8,7 +8,7 @@ export const fetchLobbyStatus = async (lobbyId: string) => {
   try {
     const { data: lobbyData, error: lobbyError } = await supabase
       .from('tournament_lobbies')
-      .select('id, current_players, status, max_players, tournament_id')
+      .select('status, current_players, max_players, tournament_id')
       .eq('id', lobbyId)
       .single();
     
@@ -51,34 +51,46 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     console.log(`[TOURNAMENT-UI] Found ${actualParticipants.length} active participants in lobby ${lobbyId}`);
     
     if (actualParticipants.length > 0) {
+      // Get user IDs array
       const userIds = actualParticipants.map(p => p.user_id);
       
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', userIds);
+      try {
+        // Fetch profiles in a separate try/catch to handle potential errors
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url')
+          .in('id', userIds);
+          
+        if (profilesError) {
+          console.error("[TOURNAMENT-UI] Error fetching profiles:", profilesError);
+          return actualParticipants.map(p => ({
+            ...p,
+            profile: { username: 'Игрок', avatar_url: null }
+          }));
+        }
         
-      if (profilesError) {
-        console.error("[TOURNAMENT-UI] Error fetching profiles:", profilesError);
+        // Map participants with their profiles
+        return actualParticipants.map(participant => {
+          const profile = profiles?.find(p => p.id === participant.user_id);
+          return {
+            ...participant,
+            profile: profile ? { 
+              username: profile.username || 'Игрок', 
+              avatar_url: profile.avatar_url 
+            } : { 
+              username: 'Игрок', 
+              avatar_url: null 
+            }
+          };
+        });
+      } catch (err) {
+        console.error("[TOURNAMENT-UI] Error processing profiles:", err);
+        // Return participants without profiles if profiles fetch fails
         return actualParticipants.map(p => ({
           ...p,
           profile: { username: 'Игрок', avatar_url: null }
         }));
       }
-      
-      return actualParticipants.map(participant => {
-        const profile = profiles?.find(p => p.id === participant.user_id);
-        return {
-          ...participant,
-          profile: profile ? { 
-            username: profile.username || 'Игрок', 
-            avatar_url: profile.avatar_url 
-          } : { 
-            username: 'Игрок', 
-            avatar_url: null 
-          }
-        };
-      });
     }
     
     return [];

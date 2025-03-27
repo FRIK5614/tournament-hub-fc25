@@ -22,6 +22,7 @@ export const useSearchSubscriptions = (
       const timestamp = Date.now();
       const clientId = Math.random().toString(36).substring(2, 10);
       
+      // Channel for lobby participants
       const lobbyChannel = supabase
         .channel(`lobby_changes_${lobbyId}_${timestamp}_${clientId}`)
         .on('postgres_changes', {
@@ -31,12 +32,15 @@ export const useSearchSubscriptions = (
           filter: `lobby_id=eq.${lobbyId}`
         }, (payload) => {
           console.log("[TOURNAMENT-UI] Lobby participants changed:", payload);
-          onDataRefresh(lobbyId);
+          onDataRefresh(lobbyId).catch(err => {
+            console.error("[TOURNAMENT-UI] Error refreshing after lobby participants change:", err);
+          });
         })
         .subscribe((status) => {
           console.log(`[TOURNAMENT-UI] Lobby channel subscription status: ${status}`);
         });
         
+      // Channel for lobby status
       const lobbyStatusChannel = supabase
         .channel(`lobby_status_changes_${lobbyId}_${timestamp}_${clientId}`)
         .on('postgres_changes', {
@@ -46,7 +50,9 @@ export const useSearchSubscriptions = (
           filter: `id=eq.${lobbyId}`
         }, (payload) => {
           console.log("[TOURNAMENT-UI] Lobby status changed:", payload);
-          onDataRefresh(lobbyId);
+          onDataRefresh(lobbyId).catch(err => {
+            console.error("[TOURNAMENT-UI] Error refreshing after lobby status change:", err);
+          });
         })
         .subscribe((status) => {
           console.log(`[TOURNAMENT-UI] Lobby status channel subscription status: ${status}`);
@@ -54,8 +60,12 @@ export const useSearchSubscriptions = (
         
       return () => {
         console.log(`[TOURNAMENT-UI] Cleaning up subscriptions for lobby ${lobbyId}`);
-        supabase.removeChannel(lobbyChannel);
-        supabase.removeChannel(lobbyStatusChannel);
+        try {
+          supabase.removeChannel(lobbyChannel);
+          supabase.removeChannel(lobbyStatusChannel);
+        } catch (err) {
+          console.error("[TOURNAMENT-UI] Error removing channels:", err);
+        }
       };
     } catch (error) {
       console.error("[TOURNAMENT-UI] Error setting up subscriptions:", error);

@@ -14,13 +14,20 @@ export const usePollingRefresh = (
     
     try {
       console.log(`[TOURNAMENT-UI] Refreshing data for lobby ${lobbyId}`);
+      
+      // Fetch lobby status
       const status = await fetchLobbyStatus(lobbyId);
       console.log(`[TOURNAMENT-UI] Lobby status: ${status.status}, players: ${status.current_players}/${status.max_players}`);
       dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: status.status === 'ready_check' });
       
-      const participants = await fetchLobbyParticipants(lobbyId);
-      console.log(`[TOURNAMENT-UI] Refreshed participants: ${participants.length}`);
-      dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: participants });
+      // Fetch participants
+      try {
+        const participants = await fetchLobbyParticipants(lobbyId);
+        console.log(`[TOURNAMENT-UI] Refreshed participants: ${participants.length}`);
+        dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: participants });
+      } catch (err) {
+        console.error("[TOURNAMENT-UI] Error refreshing participants:", err);
+      }
     } catch (error) {
       console.error("[TOURNAMENT-UI] Error refreshing lobby data:", error);
     }
@@ -39,7 +46,7 @@ export const usePollingRefresh = (
         refreshLobbyData(lobbyId).catch(err => 
           console.error("[TOURNAMENT-UI] Interval polling refresh error:", err)
         );
-      }, 3000); // Every 3 seconds instead of 5 for more responsiveness
+      }, 3000); // Every 3 seconds for more responsiveness
       
       return () => {
         clearInterval(refreshInterval);

@@ -26,20 +26,38 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
       
-      // Create a clean URL without any timestamp parameters
-      const urlObj = new URL(url.toString());
-      // Remove any timestamps or unnecessary parameters that might cause issues
-      if (urlObj.searchParams.has('_t')) {
-        urlObj.searchParams.delete('_t');
+      try {
+        // Create a clean URL without any timestamp parameters
+        const urlObj = new URL(url.toString());
+        
+        // Remove any timestamps or unnecessary parameters that might cause issues
+        if (urlObj.searchParams.has('_t')) {
+          urlObj.searchParams.delete('_t');
+        }
+        
+        // Remove any cache-related parameters
+        if (urlObj.searchParams.has('_cache')) {
+          urlObj.searchParams.delete('_cache');
+        }
+        
+        return fetch(urlObj.toString(), {
+          ...options,
+          signal: controller.signal,
+          cache: 'no-cache',
+        }).finally(() => {
+          clearTimeout(timeoutId);
+        });
+      } catch (error) {
+        console.error("Error in Supabase fetch wrapper:", error);
+        // Fall back to original URL if URL parsing fails
+        return fetch(url.toString(), {
+          ...options,
+          signal: controller.signal,
+          cache: 'no-cache',
+        }).finally(() => {
+          clearTimeout(timeoutId);
+        });
       }
-      
-      return fetch(urlObj, {
-        ...options,
-        signal: controller.signal,
-        cache: 'no-cache',
-      }).finally(() => {
-        clearTimeout(timeoutId);
-      });
     },
   },
   db: {

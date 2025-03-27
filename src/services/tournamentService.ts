@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 
 export const searchForQuickTournament = async () => {
@@ -18,6 +19,7 @@ export const searchForQuickTournament = async () => {
     
     // Add the user to the lobby
     const lobbyId = data;
+    console.log("Matched to lobby:", lobbyId);
     
     // Check if the user is already in this lobby
     const { data: existingParticipant, error: checkError } = await supabase

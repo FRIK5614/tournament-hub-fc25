@@ -52,8 +52,12 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     is_ready: participant.is_ready || false,
     profile: {
       // Use a default profile if the relation has an error or is missing
-      username: participant.profile?.username || 'Unknown Player',
-      avatar_url: participant.profile?.avatar_url || null
+      username: participant.profile && 'username' in participant.profile 
+        ? participant.profile.username 
+        : 'Unknown Player',
+      avatar_url: participant.profile && 'avatar_url' in participant.profile 
+        ? participant.profile.avatar_url 
+        : null
     }
   }));
 };
@@ -69,8 +73,12 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
     status: participant.status || 'searching',
     is_ready: participant.is_ready || false,
     profile: {
-      username: participant.profile?.username || 'Unknown Player',
-      avatar_url: participant.profile?.avatar_url || null
+      username: participant.profile && typeof participant.profile === 'object' && 'username' in participant.profile 
+        ? participant.profile.username 
+        : 'Unknown Player',
+      avatar_url: participant.profile && typeof participant.profile === 'object' && 'avatar_url' in participant.profile 
+        ? participant.profile.avatar_url 
+        : null
     }
   }));
 };
@@ -107,7 +115,12 @@ export const ensureParticipantStatus = async (participants: LobbyParticipant[], 
  */
 export const enrichParticipantsWithProfiles = async (participants: any[]): Promise<any[]> => {
   try {
-    const participantsWithMissingProfiles = participants.filter(p => !p.profile || p.profile.error);
+    const participantsWithMissingProfiles = participants.filter(p => 
+      !p.profile || 
+      typeof p.profile !== 'object' || 
+      p.profile.error || 
+      !('username' in p.profile)
+    );
     
     if (participantsWithMissingProfiles.length === 0) {
       return participants;
@@ -135,7 +148,10 @@ export const enrichParticipantsWithProfiles = async (participants: any[]): Promi
     
     // Enrich participants with profile data
     return participants.map(participant => {
-      if (participant.profile && !participant.profile.error) {
+      if (participant.profile && 
+          typeof participant.profile === 'object' && 
+          !participant.profile.error && 
+          'username' in participant.profile) {
         return participant;
       }
       

@@ -48,40 +48,42 @@ const QuickTournamentSearch = () => {
         console.log("Lobby data:", lobbyData);
         
         // If tournament is created, navigate to it
-        if (lobbyData.tournament_id && lobbyData.status === 'active') {
+        if (lobbyData.tournament_id) {
+          console.log("Tournament ID found, navigating to:", lobbyData.tournament_id);
+          
           toast({
             title: "Турнир начинается!",
             description: "Все игроки готовы. Переход к турниру...",
             variant: "default",
           });
           
-          navigate(`/tournaments/${lobbyData.tournament_id}`);
+          // Short delay to ensure all clients receive the update
+          setTimeout(() => {
+            navigate(`/tournaments/${lobbyData.tournament_id}`);
+          }, 1000);
           return;
         }
         
         setReadyCheckActive(lobbyData.status === 'ready_check');
         
-        const { data, error } = await supabase
+        // Fetch participants separately to get all necessary information
+        const { data: participants, error: participantsError } = await supabase
           .from('lobby_participants')
-          .select(`
-            id,
-            user_id,
-            lobby_id,
-            is_ready,
-            status
-          `)
+          .select('id, user_id, lobby_id, is_ready, status')
           .eq('lobby_id', lobbyId)
-          .eq('status', 'searching')
-          .or(`status.eq.ready`);
+          .or('status.eq.searching,status.eq.ready');
         
-        if (error) {
-          console.error("Error fetching lobby participants:", error);
+        if (participantsError) {
+          console.error("Error fetching lobby participants:", participantsError);
           return;
         }
         
-        if (data && data.length > 0) {
-          const userIds = data.map(p => p.user_id);
+        console.log("Lobby participants:", participants);
+        
+        if (participants && participants.length > 0) {
+          const userIds = participants.map(p => p.user_id);
           
+          // Fetch profiles separately
           const { data: profiles, error: profilesError } = await supabase
             .from('profiles')
             .select('id, username, avatar_url')
@@ -91,7 +93,10 @@ const QuickTournamentSearch = () => {
             console.error("Error fetching profiles:", profilesError);
           }
           
-          const participantsWithProfiles = data.map(participant => {
+          console.log("Profiles data:", profiles);
+          
+          // Combine participants with their profiles
+          const participantsWithProfiles = participants.map(participant => {
             const profile = profiles?.find(p => p.id === participant.user_id);
             return {
               ...participant,
@@ -110,13 +115,6 @@ const QuickTournamentSearch = () => {
           
           console.log("Ready players:", readyPlayerIds);
           console.log("Total players:", participantsWithProfiles.length);
-          
-          // Check if all players are ready and we're in ready check state
-          if (readyPlayerIds.length === lobbyData.max_players && 
-              participantsWithProfiles.length === lobbyData.max_players && 
-              lobbyData.status === 'ready_check') {
-            console.log("All players are ready! Tournament should be created soon.");
-          }
         } else {
           setLobbyParticipants([]);
           setReadyPlayers([]);
@@ -126,8 +124,10 @@ const QuickTournamentSearch = () => {
       }
     };
 
+    // Fetch initially
     fetchLobbyParticipants();
 
+    // Subscribe to changes in lobby participants
     const lobbyChannel = supabase
       .channel('lobby_changes')
       .on('postgres_changes', {
@@ -141,6 +141,7 @@ const QuickTournamentSearch = () => {
       })
       .subscribe();
       
+    // Subscribe to changes in lobby status
     const lobbyStatusChannel = supabase
       .channel('lobby_status_changes')
       .on('postgres_changes', {
@@ -151,6 +152,7 @@ const QuickTournamentSearch = () => {
       }, (payload: any) => {
         console.log("Lobby status changed:", payload);
         const newStatus = payload.new.status;
+        const tournamentId = payload.new.tournament_id;
         
         if (newStatus === 'ready_check') {
           setReadyCheckActive(true);
@@ -161,16 +163,16 @@ const QuickTournamentSearch = () => {
             description: "Подтвердите свою готовность к началу турнира.",
             variant: "default",
           });
-        } else if (newStatus === 'active') {
-          if (payload.new.tournament_id) {
-            toast({
-              title: "Турнир начинается!",
-              description: "Все игроки готовы. Переход к турниру...",
-              variant: "default",
-            });
-            
-            navigate(`/tournaments/${payload.new.tournament_id}`);
-          }
+        } else if (newStatus === 'active' && tournamentId) {
+          toast({
+            title: "Турнир начинается!",
+            description: "Все игроки готовы. Переход к турниру...",
+            variant: "default",
+          });
+          
+          setTimeout(() => {
+            navigate(`/tournaments/${tournamentId}`);
+          }, 1000);
         }
         
         fetchLobbyParticipants();
@@ -282,7 +284,8 @@ const QuickTournamentSearch = () => {
     if (!lobbyId) return;
     
     try {
-      await markUserAsReady(lobbyId);
+      const result = await markUserAsReady(lobbyId);
+      console.log("Mark ready result:", result);
       
       const { data: user } = await supabase.auth.getUser();
       if (user?.user) {

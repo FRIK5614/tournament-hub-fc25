@@ -89,17 +89,17 @@ export const searchForQuickTournament = async () => {
     }
     
     // Call the function to get or create a lobby
-    const { data, error } = await withRetry(() => 
+    const result = await withRetry(() => 
       supabase.rpc('match_players_for_quick_tournament')
     );
     
-    if (error) {
-      console.error("[TOURNAMENT] Error searching for tournament:", error);
+    if (result.error) {
+      console.error("[TOURNAMENT] Error searching for tournament:", result.error);
       throw new Error("Не удалось найти турнир. Пожалуйста, попробуйте снова.");
     }
     
     // Add the user to the lobby
-    const lobbyId = data;
+    const lobbyId = result.data;
     console.log(`[TOURNAMENT] User ${user.user.id} matched to lobby: ${lobbyId}`);
     
     // Check if the user is already in this lobby
@@ -398,7 +398,7 @@ export const checkAllPlayersReady = async (lobbyId: string) => {
           })
         );
         
-        if (result.error) {
+        if (result && result.error) {
           console.error("[TOURNAMENT] Error creating tournament:", result.error);
           return { allReady: true, tournamentId: null };
         }
@@ -456,3 +456,4 @@ export const getLobbyStatus = async (lobbyId: string) => {
   
   return response.data;
 };
+

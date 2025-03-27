@@ -55,7 +55,7 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
         ? String(participant.profile.username) 
         : 'Unknown Player',
       avatar_url: participant.profile && typeof participant.profile === 'object' && participant.profile !== null && 'avatar_url' in participant.profile 
-        ? participant.profile.avatar_url as string | null
+        ? (participant.profile.avatar_url as string | null)
         : null
     }
   }));
@@ -76,7 +76,7 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
         ? String(participant.profile.username) 
         : 'Unknown Player',
       avatar_url: participant.profile && typeof participant.profile === 'object' && participant.profile !== null && 'avatar_url' in participant.profile 
-        ? participant.profile.avatar_url as string | null
+        ? (participant.profile.avatar_url as string | null)
         : null
     }
   }));

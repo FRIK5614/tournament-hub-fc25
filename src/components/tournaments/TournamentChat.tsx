@@ -77,6 +77,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
         table: 'chat_messages',
         filter: `tournament_id=eq.${tournamentId}`
       }, async (payload) => {
+        console.log('[CHAT] New message received:', payload);
         // Get the full message data with sender info
         const { data, error } = await supabase
           .from('chat_messages')
@@ -88,13 +89,19 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
           .single();
           
         if (!error && data) {
+          console.log('[CHAT] Message with sender data:', data);
           setMessages(prevMessages => [...prevMessages, data]);
           scrollToBottom();
+        } else {
+          console.error('[CHAT] Error fetching message details:', error);
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[CHAT] Subscription status:', status);
+      });
       
     return () => {
+      console.log('[CHAT] Unsubscribing from channel');
       supabase.removeChannel(channel);
     };
   }, [tournamentId, toast]);
@@ -111,6 +118,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
     if (!newMessage.trim() || !user) return;
     
     try {
+      console.log('[CHAT] Sending message:', newMessage);
       // Make sure we're using the right structure for the insert
       const { error } = await supabase
         .from('chat_messages')
@@ -126,7 +134,7 @@ const TournamentChat = ({ tournamentId }: { tournamentId: string }) => {
       
       setNewMessage('');
     } catch (error: any) {
-      console.error('Error sending message:', error);
+      console.error('[CHAT] Error sending message:', error);
       toast({
         title: 'Ошибка отправки',
         description: error.message || 'Не удалось отправить сообщение',

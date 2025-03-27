@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from "@/integrations/supabase/client";
 import Navbar from '@/components/Navbar';
@@ -23,7 +22,7 @@ const Tournaments = () => {
       const { data: user } = await supabase.auth.getUser();
       
       if (user?.user) {
-        // Проверяем, является ли пользователь администратором
+        // Проверя��м, является ли пользователь администратором
         try {
           const { data: profile } = await supabase
             .from('profiles')
@@ -32,9 +31,8 @@ const Tournaments = () => {
             .single();
             
           // Check if the profile exists and has admin privileges
-          // Instead of accessing .admin directly, we'll use a different approach
-          // since the admin field might not exist in the profile schema
-          setIsAdmin(profile?.country === 'admin'); // Using country field as a temporary admin flag
+          // Используем country field как временный флаг администратора
+          setIsAdmin(profile?.country === 'admin'); 
           
           // Если много дубликатов турниров, показываем компонент очистки
           const analysis = await analyzeTournamentCreation().catch(() => null);

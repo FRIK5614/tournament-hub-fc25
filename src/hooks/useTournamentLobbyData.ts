@@ -68,6 +68,8 @@ export function useTournamentLobbyData(tournamentId: string) {
     
     fetchTournamentData();
     
+    // Enable realtime updates for matches, standings and tournament data
+    
     // Subscribe to match updates
     const matchesChannel = supabase
       .channel('tournament_matches')
@@ -77,7 +79,7 @@ export function useTournamentLobbyData(tournamentId: string) {
         table: 'matches',
         filter: `tournament_id=eq.${tournamentId}`
       }, async (payload) => {
-        console.log(`[TOURNAMENT-LOBBY] Matches updated for tournament: ${tournamentId}`);
+        console.log(`[TOURNAMENT-LOBBY] Matches updated for tournament: ${tournamentId}`, payload);
         
         try {
           // Update matches for current user
@@ -91,7 +93,9 @@ export function useTournamentLobbyData(tournamentId: string) {
           console.error(`[TOURNAMENT-LOBBY] Error in matches subscription: ${error.message}`);
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[TOURNAMENT-LOBBY] Matches subscription status: ${status}`);
+      });
       
     // Subscribe to standings updates
     const standingsChannel = supabase
@@ -101,8 +105,8 @@ export function useTournamentLobbyData(tournamentId: string) {
         schema: 'public',
         table: 'tournament_participants',
         filter: `tournament_id=eq.${tournamentId}`
-      }, async () => {
-        console.log(`[TOURNAMENT-LOBBY] Standings updated for tournament: ${tournamentId}`);
+      }, async (payload) => {
+        console.log(`[TOURNAMENT-LOBBY] Standings updated for tournament: ${tournamentId}`, payload);
         
         try {
           const standingsData = await getTournamentStandings(tournamentId);
@@ -112,8 +116,40 @@ export function useTournamentLobbyData(tournamentId: string) {
           console.error(`[TOURNAMENT-LOBBY] Error in standings subscription: ${error.message}`);
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[TOURNAMENT-LOBBY] Standings subscription status: ${status}`);
+      });
       
+    // Subscribe to tournament updates
+    const tournamentChannel = supabase
+      .channel('tournament_updates')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'tournaments',
+        filter: `id=eq.${tournamentId}`
+      }, async (payload) => {
+        console.log(`[TOURNAMENT-LOBBY] Tournament updated: ${tournamentId}`, payload);
+        
+        try {
+          const { data, error } = await supabase
+            .from('tournaments')
+            .select('*, lobby:lobby_id(*)')
+            .eq('id', tournamentId)
+            .single();
+            
+          if (!error && data) {
+            console.log(`[TOURNAMENT-LOBBY] Updated tournament data:`, data);
+            setTournament(data);
+          }
+        } catch (error: any) {
+          console.error(`[TOURNAMENT-LOBBY] Error in tournament subscription: ${error.message}`);
+        }
+      })
+      .subscribe((status) => {
+        console.log(`[TOURNAMENT-LOBBY] Tournament subscription status: ${status}`);
+      });
+    
     // Setup improved chat message subscription
     const chatChannel = supabase
       .channel('tournament_chat')
@@ -131,6 +167,7 @@ export function useTournamentLobbyData(tournamentId: string) {
       console.log(`[TOURNAMENT-LOBBY] Cleaning up subscriptions for tournament: ${tournamentId}`);
       supabase.removeChannel(matchesChannel);
       supabase.removeChannel(standingsChannel);
+      supabase.removeChannel(tournamentChannel);
       supabase.removeChannel(chatChannel);
     };
   }, [tournamentId, toast]);

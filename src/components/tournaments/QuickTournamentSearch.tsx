@@ -3,7 +3,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { searchForQuickTournament, markUserAsReady, checkAllPlayersReady, leaveQuickTournament } from '@/services/tournamentService';
+import { 
+  searchForQuickTournament, 
+  markUserAsReady, 
+  checkAllPlayersReady, 
+  leaveQuickTournament 
+} from '@/services/tournament';
 import { Loader2, Users, Check, X, AlertTriangle } from 'lucide-react';
 
 const QuickTournamentSearch = () => {

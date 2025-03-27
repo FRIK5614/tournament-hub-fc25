@@ -10,7 +10,7 @@ export const RETRY_DELAY = 1000;
 export const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Helper function to retry a function with exponential backoff
-export async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES, delayMs = RETRY_DELAY): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<any>, retries = MAX_RETRIES, delayMs = RETRY_DELAY): Promise<any> {
   try {
     return await fn();
   } catch (error) {

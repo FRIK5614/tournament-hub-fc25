@@ -1,7 +1,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { delay } from "../utils";
-import { updateLobbyPlayerCount } from "@/hooks/tournament-search/utils";
+import { updateLobbyPlayerCount as updateLobbyPlayerCountFromUtils } from "@/hooks/tournament-search/utils";
 
 // Helper function for debugging errors in different environments
 const logError = (context: string, error: any) => {
@@ -46,7 +46,7 @@ export const cleanupStaleLobbyParticipation = async (userId: string) => {
 /**
  * Update the current player count for a lobby
  */
-export const updateLobbyPlayerCount = async (lobbyId: string) => {
+export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
   if (!lobbyId) return;
   
   try {
@@ -260,7 +260,7 @@ export const searchForQuickTournament = async () => {
     }
     
     // Update the lobby's current_players count - force this to update after user was added
-    await updateLobbyPlayerCount(lobbyId);
+    await updateLobbyPlayerCountLocal(lobbyId);
     
     // Add a slight delay and verify the player was added correctly
     await delay(1000);
@@ -284,12 +284,10 @@ export const searchForQuickTournament = async () => {
           status: initialStatus,
           is_ready: false
         });
-        
-      // Note: Removed the onConflict() method which was causing the TypeScript error
     }
     
     // Force update player count one more time to ensure accuracy
-    await updateLobbyPlayerCount(lobbyId);
+    await updateLobbyPlayerCountLocal(lobbyId);
     
     return { lobbyId };
   } catch (error) {
@@ -319,7 +317,7 @@ export const leaveQuickTournament = async (lobbyId: string) => {
       .eq('user_id', user.user.id);
       
     // Update lobby player count
-    await updateLobbyPlayerCount(lobbyId);
+    await updateLobbyPlayerCountLocal(lobbyId);
     
     console.log(`[TOURNAMENT] User ${user.user.id} successfully left lobby ${lobbyId}`);
     return { success: true };

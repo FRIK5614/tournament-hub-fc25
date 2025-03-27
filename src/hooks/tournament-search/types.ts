@@ -1,38 +1,30 @@
 
 export interface LobbyParticipant {
-  id: string;
+  id: string; 
   user_id: string;
   lobby_id: string;
+  status: 'searching' | 'ready' | 'left';
   is_ready: boolean;
-  status: string;
   profile?: {
-    username: string;
-    avatar_url: string | null;
-  };
+    id?: string;
+    username?: string;
+    avatar_url?: string | null;
+  } | null;
 }
 
 export interface TournamentSearchState {
-  isSearching: boolean;
+  currentUserId: string | null;
   lobbyId: string | null;
+  isSearching: boolean;
   readyCheckActive: boolean;
   countdownSeconds: number;
   lobbyParticipants: LobbyParticipant[];
   readyPlayers: string[];
-  searchAttempts: number;
-  currentUserId: string | null;
   isLoading: boolean;
-  isCreatingTournament: boolean;
   tournamentCreationStatus: string;
+  isCreatingTournament: boolean;
+  tournamentId: string | null;
+  searchAttempts: number;
   creationAttempts: number;
   checkTournamentTrigger: boolean;
-  tournamentId: string | null;
 }
-
-export interface TournamentSearchActions {
-  handleStartSearch: (isRetry?: boolean) => Promise<void>;
-  handleCancelSearch: () => Promise<void>;
-  handleReadyCheck: () => Promise<void>;
-  isUserReady: () => boolean;
-}
-
-export interface UseTournamentSearchResult extends Omit<TournamentSearchState, 'searchAttempts' | 'creationAttempts' | 'checkTournamentTrigger'>, TournamentSearchActions {}

@@ -38,7 +38,8 @@ const QuickTournamentSearch = () => {
       readyPlayersCount: readyPlayers?.length || 0,
       isLoading,
       tournamentCreationStatus,
-      isCreatingTournament
+      isCreatingTournament,
+      lobbyParticipants
     });
   }, [isSearching, readyCheckActive, lobbyParticipants, readyPlayers, isLoading, tournamentCreationStatus, isCreatingTournament]);
 

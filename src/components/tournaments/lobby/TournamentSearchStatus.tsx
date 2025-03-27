@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { LobbyParticipant } from '@/hooks/useTournamentSearch';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect } from 'react';
 
 interface TournamentSearchStatusProps {
   lobbyParticipants: LobbyParticipant[];
@@ -21,6 +22,11 @@ const TournamentSearchStatus = ({
   const participantCount = lobbyParticipants?.length || 0;
   const searchProgress = (participantCount / 4) * 100;
   
+  // Добавляем логирование для отладки
+  useEffect(() => {
+    console.log("[TOURNAMENT-UI] Render TournamentSearchStatus with participants:", lobbyParticipants);
+  }, [lobbyParticipants]);
+
   // Helper for placeholder avatars when none is available
   const getInitials = (username: string) => {
     return username?.substring(0, 2).toUpperCase() || '??';
@@ -75,7 +81,7 @@ const TournamentSearchStatus = ({
         
         <div className="flex justify-center gap-2">
           <AnimatePresence>
-            {lobbyParticipants.map((participant, index) => (
+            {lobbyParticipants && lobbyParticipants.map((participant, index) => (
               <motion.div
                 key={participant.user_id || index}
                 className="flex flex-col items-center"
@@ -88,7 +94,7 @@ const TournamentSearchStatus = ({
                   <div className="w-10 h-10 rounded-full bg-fc-background overflow-hidden border border-white/10 mb-1">
                     <img 
                       src={participant.profile.avatar_url}
-                      alt={participant.profile.username || "Участник"}
+                      alt={participant.profile?.username || "Участник"}
                       className="w-full h-full object-cover"
                     />
                   </div>

@@ -32,6 +32,37 @@ const QuickTournamentSearch = () => {
     fetchUser();
   }, []);
 
+  const handleCancelSearch = async () => {
+    if (!lobbyId) {
+      setIsSearching(false);
+      setSearchAttempts(0);
+      return;
+    }
+    
+    try {
+      console.log(`[TOURNAMENT-UI] Cancelling search for lobby ${lobbyId}`);
+      
+      if (currentUserId) {
+        await leaveQuickTournament(lobbyId);
+        console.log(`[TOURNAMENT-UI] User ${currentUserId} left lobby ${lobbyId}`);
+      }
+      
+      setIsSearching(false);
+      setLobbyId(null);
+      setReadyCheckActive(false);
+      setSearchAttempts(0);
+      setTournamentCreationStatus('');
+      
+      toast({
+        title: "Поиск отменен",
+        description: "Вы вышли из поиска турнира",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("[TOURNAMENT-UI] Error canceling search:", error);
+    }
+  };
+
   const checkTournamentCreation = useCallback(async () => {
     if (!lobbyId || isCreatingTournament) return;
     
@@ -90,7 +121,7 @@ const QuickTournamentSearch = () => {
     } finally {
       setIsCreatingTournament(false);
     }
-  }, [lobbyId, navigate, toast, isCreatingTournament, handleCancelSearch]);
+  }, [lobbyId, navigate, toast, isCreatingTournament]);
 
   useEffect(() => {
     if (!lobbyId) return;
@@ -326,37 +357,6 @@ const QuickTournamentSearch = () => {
       }
       
       setSearchAttempts(prev => prev + 1);
-    }
-  };
-
-  const handleCancelSearch = async () => {
-    if (!lobbyId) {
-      setIsSearching(false);
-      setSearchAttempts(0);
-      return;
-    }
-    
-    try {
-      console.log(`[TOURNAMENT-UI] Cancelling search for lobby ${lobbyId}`);
-      
-      if (currentUserId) {
-        await leaveQuickTournament(lobbyId);
-        console.log(`[TOURNAMENT-UI] User ${currentUserId} left lobby ${lobbyId}`);
-      }
-      
-      setIsSearching(false);
-      setLobbyId(null);
-      setReadyCheckActive(false);
-      setSearchAttempts(0);
-      setTournamentCreationStatus('');
-      
-      toast({
-        title: "Поиск отменен",
-        description: "Вы вышли из поиска турнира",
-        variant: "default",
-      });
-    } catch (error) {
-      console.error("[TOURNAMENT-UI] Error canceling search:", error);
     }
   };
 

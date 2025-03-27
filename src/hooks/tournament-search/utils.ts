@@ -42,7 +42,20 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     throw error;
   }
   
-  return data || [];
+  // Process the data to ensure it matches the LobbyParticipant type
+  // This handles the case where the profile relation might have errors
+  return (data || []).map(participant => ({
+    id: participant.id,
+    user_id: participant.user_id,
+    lobby_id: participant.lobby_id,
+    status: participant.status || 'searching',
+    is_ready: participant.is_ready || false,
+    profile: {
+      // Use a default profile if the relation has an error or is missing
+      username: participant.profile?.username || 'Unknown Player',
+      avatar_url: participant.profile?.avatar_url || null
+    }
+  }));
 };
 
 /**
@@ -53,9 +66,12 @@ export const parseLobbyParticipants = (participants: any[]): LobbyParticipant[] 
     id: participant.id,
     user_id: participant.user_id,
     lobby_id: participant.lobby_id,
-    status: participant.status,
-    is_ready: participant.is_ready,
-    profile: participant.profile
+    status: participant.status || 'searching',
+    is_ready: participant.is_ready || false,
+    profile: {
+      username: participant.profile?.username || 'Unknown Player',
+      avatar_url: participant.profile?.avatar_url || null
+    }
   }));
 };
 
@@ -91,7 +107,7 @@ export const ensureParticipantStatus = async (participants: LobbyParticipant[], 
  */
 export const enrichParticipantsWithProfiles = async (participants: any[]): Promise<any[]> => {
   try {
-    const participantsWithMissingProfiles = participants.filter(p => !p.profile);
+    const participantsWithMissingProfiles = participants.filter(p => !p.profile || p.profile.error);
     
     if (participantsWithMissingProfiles.length === 0) {
       return participants;
@@ -119,7 +135,7 @@ export const enrichParticipantsWithProfiles = async (participants: any[]): Promi
     
     // Enrich participants with profile data
     return participants.map(participant => {
-      if (participant.profile) {
+      if (participant.profile && !participant.profile.error) {
         return participant;
       }
       

@@ -56,6 +56,13 @@ const QuickTournamentSearch = () => {
     };
   }, [isSearching, readyCheckActive, handleCancelSearch]);
 
+  // Add navigation effect when tournamentId is set
+  useEffect(() => {
+    if (tournamentId) {
+      navigate(`/tournaments/${tournamentId}`);
+    }
+  }, [tournamentId, navigate]);
+
   return (
     <div className="glass-card p-6">
       <h3 className="text-xl font-semibold mb-4">Быстрый турнир</h3>
@@ -63,6 +70,7 @@ const QuickTournamentSearch = () => {
       {!isSearching && (
         <TournamentIntro 
           onStartSearch={() => {
+            console.log("[TOURNAMENT-UI] Start search button clicked");
             try {
               handleStartSearch();
             } catch (error) {

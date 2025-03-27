@@ -82,6 +82,7 @@ export const useSearchActions = (
   }, [state.readyPlayers, state.currentUserId]);
 
   const handleStartSearch = useCallback(async (isRetry: boolean = false): Promise<void> => {
+    console.log("[TOURNAMENT-UI] handleStartSearch called, isRetry:", isRetry);
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_SEARCH_ATTEMPTS', payload: isRetry ? state.searchAttempts + 1 : 0 });
 
@@ -127,7 +128,7 @@ export const useSearchActions = (
       try {
         const initialLobbyStatus = await fetchLobbyStatus(lobbyId);
         dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: initialLobbyStatus.status === 'ready_check' });
-        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // Увеличиваем до 120 секунд (2 минуты)
+        dispatch({ type: 'SET_COUNTDOWN_SECONDS', payload: 120 });  // 2 minutes
 
         const initialParticipants = await fetchLobbyParticipants(lobbyId);
         console.log(`[TOURNAMENT-UI] Initial participants:`, initialParticipants);

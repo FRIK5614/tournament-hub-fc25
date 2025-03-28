@@ -7,6 +7,8 @@ import { LobbyParticipant } from "./types";
  */
 export const fetchLobbyStatus = async (lobbyId: string) => {
   try {
+    console.log(`[TOURNAMENT-UI] Fetching lobby status for ${lobbyId}`);
+    
     const { data, error } = await supabase
       .from('tournament_lobbies')
       .select('id, status, current_players, max_players, ready_check_started_at, tournament_id')
@@ -18,6 +20,7 @@ export const fetchLobbyStatus = async (lobbyId: string) => {
       return null;
     }
     
+    console.log(`[TOURNAMENT-UI] Fetched lobby status:`, data);
     return data;
   } catch (error) {
     console.error('[TOURNAMENT-UI] Exception in fetchLobbyStatus:', error);
@@ -46,8 +49,11 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
     
     // Если участников нет, возвращаем пустой массив
     if (!participants || participants.length === 0) {
+      console.log('[TOURNAMENT-UI] No participants found in lobby');
       return [];
     }
+    
+    console.log(`[TOURNAMENT-UI] Found ${participants.length} participants in lobby`);
     
     // Формируем массив идентификаторов пользователей для получения их профилей
     const userIds = participants.map(p => p.user_id);
@@ -71,6 +77,8 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       }));
     }
     
+    console.log(`[TOURNAMENT-UI] Fetched ${profiles?.length || 0} profiles`);
+    
     // Создаем Map для быстрого доступа к профилям по id
     const profilesMap = new Map();
     profiles?.forEach(profile => {
@@ -90,7 +98,7 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
       };
     });
     
-    console.log(`[TOURNAMENT-UI] Fetched ${participantsWithProfiles.length} participants with profiles:`, 
+    console.log(`[TOURNAMENT-UI] Returning ${participantsWithProfiles.length} participants with profiles:`, 
       participantsWithProfiles.map(p => ({id: p.user_id, username: p.profile.username}))
     );
     
@@ -121,6 +129,7 @@ export const updateLobbyPlayerCount = async (lobbyId: string) => {
     }
     
     const count = participants?.length || 0;
+    console.log(`[TOURNAMENT-UI] Active participants count: ${count}`);
     
     // Update the lobby with the actual count
     const { error: updateError } = await supabase

@@ -117,23 +117,34 @@ export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
 /**
  * Search for an available quick tournament or create a new one
  */
-// Обновляем логику поиска и создания турниров
 export const searchForQuickTournament = async () => {
   try {
     console.log('[TOURNAMENT] Starting search for quick tournament...');
-    const { data: user } = await supabase.auth.getUser();
+    const { data: user, error: authError } = await supabase.auth.getUser();
+    
+    if (authError) {
+      console.error('[TOURNAMENT] Auth error:', authError);
+      throw new Error("Ошибка авторизации: " + authError.message);
+    }
     
     if (!user?.user) {
+      console.error('[TOURNAMENT] No user found in session');
       throw new Error("Необходимо авторизоваться для участия в турнирах");
     }
     
+    console.log('[TOURNAMENT] Current user:', user.user.id);
+    
     // Проверяем существующие активные турниры пользователя
-    const { data: existingParticipation } = await supabase
+    const { data: existingParticipation, error: participationError } = await supabase
       .from('tournament_participants')
       .select('tournament_id(id, status)')
       .eq('user_id', user.user.id)
       .eq('tournament_id.status', 'active')
-      .single();
+      .maybeSingle();
+    
+    if (participationError) {
+      console.error('[TOURNAMENT] Error checking existing participation:', participationError);
+    }
     
     if (existingParticipation) {
       console.log(`[TOURNAMENT] Пользователь уже участвует в активном турнире: ${existingParticipation.tournament_id.id}`);
@@ -143,15 +154,69 @@ export const searchForQuickTournament = async () => {
     // Очищаем старые lobby участия
     await cleanupStaleLobbyParticipation(user.user.id);
     
-    // Используем RPC функцию для подбора игроков
-    const { data: lobbyId, error: rpcError } = await supabase.rpc('match_players_for_quick_tournament');
+    // Используем прямой SQL вызов, чтобы обойти потенциальные проблемы с RPC
+    // В случае ошибки с RPC, создаем лобби вручную
+    let lobbyId = null;
     
-    if (rpcError) {
-      console.error('[TOURNAMENT] Error using RPC match_players_for_quick_tournament:', rpcError);
-      throw new Error(`Ошибка при поиске игроков: ${rpcError.message}`);
+    try {
+      // Используем RPC функцию для подбора игроков
+      const { data: rpcData, error: rpcError } = await supabase.rpc('match_players_for_quick_tournament');
+      
+      if (rpcError) {
+        console.error('[TOURNAMENT] Error using RPC match_players_for_quick_tournament:', rpcError);
+        throw rpcError;
+      }
+      
+      lobbyId = rpcData;
+      console.log(`[TOURNAMENT] RPC successfully returned lobby ID: ${lobbyId}`);
+    } catch (rpcError) {
+      console.error('[TOURNAMENT] Caught RPC error, falling back to manual lobby creation:', rpcError);
+      
+      // Ручное создание лобби в случае ошибки RPC
+      // Ищем существующее лобби с меньше чем 4 игроками
+      const { data: existingLobbies } = await supabase
+        .from('tournament_lobbies')
+        .select('id, current_players')
+        .eq('status', 'waiting')
+        .lt('current_players', 4)
+        .order('created_at', { ascending: true })
+        .limit(1);
+      
+      if (existingLobbies && existingLobbies.length > 0) {
+        // Используем существующее лобби
+        lobbyId = existingLobbies[0].id;
+        
+        console.log(`[TOURNAMENT] Using existing lobby: ${lobbyId} with ${existingLobbies[0].current_players} players`);
+        
+        // Обновляем количество игроков
+        await supabase
+          .from('tournament_lobbies')
+          .update({ current_players: existingLobbies[0].current_players + 1 })
+          .eq('id', lobbyId);
+      } else {
+        // Создаем новое лобби
+        const { data: newLobby, error: createError } = await supabase
+          .from('tournament_lobbies')
+          .insert({
+            status: 'waiting',
+            current_players: 1,
+            max_players: 4
+          })
+          .select('id')
+          .single();
+        
+        if (createError || !newLobby) {
+          console.error('[TOURNAMENT] Error creating new lobby:', createError);
+          throw new Error("Не удалось создать новое лобби: " + (createError?.message || "неизвестная ошибка"));
+        }
+        
+        lobbyId = newLobby.id;
+        console.log(`[TOURNAMENT] Created new lobby: ${lobbyId}`);
+      }
     }
     
     if (!lobbyId) {
+      console.error('[TOURNAMENT] No lobby ID returned or created');
       throw new Error("Сервер не вернул ID лобби");
     }
     
@@ -164,15 +229,24 @@ export const searchForQuickTournament = async () => {
       .eq('id', user.user.id)
       .maybeSingle();
       
-    if (profileError || !profileData) {
+    if (profileError) {
+      console.error('[TOURNAMENT] Error fetching profile:', profileError);
+    }
+    
+    if (!profileData) {
       console.log(`[TOURNAMENT] Creating profile for user ${user.user.id}`);
       // Create a profile if one doesn't exist
+      const username = user.user.email ? user.user.email.split('@')[0] : `Player-${user.user.id.substring(0, 6)}`;
       await supabase
         .from('profiles')
         .insert({
           id: user.user.id,
-          username: user.user.email?.split('@')[0] || `Player-${user.user.id.substring(0, 6)}`
+          username: username
         });
+        
+      console.log(`[TOURNAMENT] Created profile with username: ${username}`);
+    } else {
+      console.log(`[TOURNAMENT] Found existing profile for user ${user.user.id}: ${profileData.username}`);
     }
     
     // Get lobby status and make sure max_players is always 4

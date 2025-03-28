@@ -94,8 +94,10 @@ export const useSearchActions = (
     try {
       console.log("[TOURNAMENT-UI] Starting tournament search, isRetry:", isRetry);
       
+      // Проверяем авторизацию пользователя
       const { data: user } = await supabase.auth.getUser();
       if (!user?.user) {
+        console.error("[TOURNAMENT-UI] User not authenticated");
         throw new Error("Пользователь не авторизован");
       }
       
@@ -107,11 +109,15 @@ export const useSearchActions = (
 
       // Search for a quick tournament
       const { lobbyId } = await searchForQuickTournament();
+      
+      console.log(`[TOURNAMENT-UI] Found lobby: ${lobbyId}`);
+      
+      // Убедимся, что lobbyId существует и не пустой
       if (!lobbyId) {
+        console.error("[TOURNAMENT-UI] No lobby ID returned");
         throw new Error("Не удалось найти подходящее лобби");
       }
       
-      console.log(`[TOURNAMENT-UI] Found lobby: ${lobbyId}`);
       dispatch({ type: 'SET_LOBBY_ID', payload: lobbyId });
       
       // Fetch initial lobby status and participants
@@ -126,9 +132,10 @@ export const useSearchActions = (
         variant: "default",
       });
     } catch (error: any) {
-      console.error("Ошибка при поиске лобби:", error);
+      console.error("[TOURNAMENT-UI] Error searching for lobby:", error);
       
-      if (!isRetry) {
+      // Если это не повторная попытка, пробуем еще раз
+      if (!isRetry && state.searchAttempts < 2) {
         toast({
           title: "Повторная попытка поиска",
           description: "Возникла проблема при поиске. Пробуем еще раз...",

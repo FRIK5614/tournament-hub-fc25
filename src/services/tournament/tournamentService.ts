@@ -1,3 +1,4 @@
+
 import { supabase } from "@/integrations/supabase/client";
 
 // Get tournament standings
@@ -83,10 +84,20 @@ export const registerForLongTermTournament = async (tournamentId: string) => {
       
     if (error) throw error;
     
-    // Update tournament participants count - we'll use a direct update instead of RPC
+    // Update tournament participants count with a direct update
+    // First, get the current count
+    const { data: participantCount, error: countError } = await supabase
+      .from('tournament_participants')
+      .select('id', { count: 'exact' })
+      .eq('tournament_id', tournamentId);
+      
+    if (countError) throw countError;
+    
+    // Then update the tournament with the new count
+    const count = participantCount?.length || 0;
     const { error: updateError } = await supabase
       .from('tournaments')
-      .update({ current_participants: supabase.rpc('get_participant_count', { t_id: tournamentId }) })
+      .update({ current_participants: count })
       .eq('id', tournamentId);
       
     if (updateError) throw updateError;

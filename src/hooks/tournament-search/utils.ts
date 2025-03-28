@@ -32,60 +32,69 @@ export const fetchLobbyParticipants = async (lobbyId: string): Promise<LobbyPart
   try {
     console.log(`[TOURNAMENT-UI] Fetching participants for lobby: ${lobbyId}`);
     
-    // First attempt: Try to get participants with their profiles
-    const { data: participantsWithProfiles, error: joinError } = await supabase
+    // Сначала получаем всех участников лобби
+    const { data: participants, error } = await supabase
       .from('lobby_participants')
-      .select(`
-        id, user_id, status, is_ready, lobby_id,
-        profile:profiles(id, username, avatar_url)
-      `)
+      .select('id, user_id, status, is_ready, lobby_id')
       .eq('lobby_id', lobbyId)
       .in('status', ['searching', 'ready']);
       
-    if (joinError) {
-      console.error('[TOURNAMENT-UI] Error fetching participants with profiles:', joinError);
-      
-      // Fallback: Get participants without profiles
-      const { data: participantsOnly, error: fallbackError } = await supabase
-        .from('lobby_participants')
-        .select('id, user_id, status, is_ready, lobby_id')
-        .eq('lobby_id', lobbyId)
-        .in('status', ['searching', 'ready']);
-        
-      if (fallbackError) {
-        console.error('[TOURNAMENT-UI] Error in fallback fetch participants:', fallbackError);
-        return [];
-      }
-      
-      // Create basic profile information for participants
-      const formatParticipants = participantsOnly?.map(p => ({
+    if (error) {
+      console.error('[TOURNAMENT-UI] Error fetching participants:', error);
+      return [];
+    }
+    
+    // Если участников нет, возвращаем пустой массив
+    if (!participants || participants.length === 0) {
+      return [];
+    }
+    
+    // Формируем массив идентификаторов пользователей для получения их профилей
+    const userIds = participants.map(p => p.user_id);
+    
+    // Получаем профили пользователей отдельным запросом
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_url')
+      .in('id', userIds);
+    
+    if (profilesError) {
+      console.error('[TOURNAMENT-UI] Error fetching profiles:', profilesError);
+      // Если не удалось получить профили, создаем минимальные данные на основе user_id
+      return participants.map(p => ({
         ...p,
         profile: {
           id: p.user_id,
           username: `Player-${p.user_id.substring(0, 6)}`,
           avatar_url: null
         }
-      })) || [];
-      
-      console.log(`[TOURNAMENT-UI] Fetched ${formatParticipants.length} participants (fallback method)`);
-      return formatParticipants;
+      }));
     }
     
-    // Format participants with profiles
-    const formattedParticipants = participantsWithProfiles?.map(p => ({
-      ...p,
-      profile: p.profile || {
-        id: p.user_id,
-        username: `Player-${p.user_id.substring(0, 6)}`,
-        avatar_url: null
-      }
-    })) || [];
+    // Создаем Map для быстрого доступа к профилям по id
+    const profilesMap = new Map();
+    profiles?.forEach(profile => {
+      profilesMap.set(profile.id, profile);
+    });
     
-    console.log(`[TOURNAMENT-UI] Fetched ${formattedParticipants.length} participants with profiles:`, 
-      formattedParticipants.map(p => ({id: p.user_id, username: p.profile?.username}))
+    // Объединяем участников с их профилями
+    const participantsWithProfiles = participants.map(p => {
+      const userProfile = profilesMap.get(p.user_id);
+      return {
+        ...p,
+        profile: userProfile || {
+          id: p.user_id,
+          username: `Player-${p.user_id.substring(0, 6)}`,
+          avatar_url: null
+        }
+      };
+    });
+    
+    console.log(`[TOURNAMENT-UI] Fetched ${participantsWithProfiles.length} participants with profiles:`, 
+      participantsWithProfiles.map(p => ({id: p.user_id, username: p.profile.username}))
     );
     
-    return formattedParticipants;
+    return participantsWithProfiles;
   } catch (error) {
     console.error('[TOURNAMENT-UI] Exception in fetchLobbyParticipants:', error);
     return [];

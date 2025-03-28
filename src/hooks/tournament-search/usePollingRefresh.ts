@@ -36,14 +36,12 @@ export const usePollingRefresh = (
         dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: lobby.status === 'ready_check' });
       }
       
-      // Get participants with complete profile data
+      // Получаем всех участников
       try {
-        const { data: participants, error: participantsError } = await supabase
+        // Получаем участников лобби
+        const { data: lobbyParticipants, error: participantsError } = await supabase
           .from('lobby_participants')
-          .select(`
-            id, user_id, status, is_ready, lobby_id,
-            profile:profiles(id, username, avatar_url)
-          `)
+          .select('id, user_id, status, is_ready, lobby_id')
           .eq('lobby_id', lobbyId)
           .in('status', ['searching', 'ready']);
           
@@ -51,24 +49,69 @@ export const usePollingRefresh = (
           throw participantsError;
         }
         
-        console.log(`[TOURNAMENT-UI] Updating lobby ${lobbyId} participants:`, 
-          participants?.map(p => ({
+        // Если участников нет, просто обновляем состояние
+        if (!lobbyParticipants || lobbyParticipants.length === 0) {
+          dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: [] });
+          dispatch({ type: 'SET_READY_PLAYERS', payload: [] });
+          return;
+        }
+        
+        // Получаем идентификаторы пользователей
+        const userIds = lobbyParticipants.map(p => p.user_id);
+        
+        // Получаем профили пользователей
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url')
+          .in('id', userIds);
+          
+        if (profilesError) {
+          console.error('[TOURNAMENT-UI] Error fetching profiles:', profilesError);
+          // Создаем профили на основе ID пользователей
+          const formattedParticipants = lobbyParticipants.map(p => ({
+            ...p,
+            profile: {
+              id: p.user_id,
+              username: `Player-${p.user_id.substring(0, 6)}`,
+              avatar_url: null
+            }
+          }));
+          
+          dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: formattedParticipants });
+          dispatch({ 
+            type: 'SET_READY_PLAYERS', 
+            payload: formattedParticipants.filter(p => p.is_ready).map(p => p.user_id) 
+          });
+          return;
+        }
+        
+        // Создаем Map для быстрого доступа к профилям
+        const profilesMap = new Map();
+        profiles?.forEach(profile => {
+          profilesMap.set(profile.id, profile);
+        });
+        
+        // Объединяем данные участников с их профилями
+        const formattedParticipants = lobbyParticipants.map(p => {
+          const userProfile = profilesMap.get(p.user_id);
+          return {
+            ...p,
+            profile: userProfile || {
+              id: p.user_id,
+              username: `Player-${p.user_id.substring(0, 6)}`,
+              avatar_url: null
+            }
+          };
+        });
+        
+        console.log("[TOURNAMENT-UI] Updating lobby participants:", 
+          formattedParticipants.map(p => ({
             id: p.user_id,
-            username: p.profile?.username || 'Unknown',
+            username: p.profile.username,
             status: p.status,
             is_ready: p.is_ready
           }))
         );
-
-        // Format participants with fallback for missing profile data
-        const formattedParticipants = participants?.map(p => ({
-          ...p,
-          profile: p.profile || {
-            id: p.user_id,
-            username: `Player-${p.user_id.substring(0, 6)}`,
-            avatar_url: null
-          }
-        })) || [];
         
         dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: formattedParticipants });
         dispatch({ 
@@ -109,35 +152,6 @@ export const usePollingRefresh = (
         await updateLobbyPlayerCount(lobbyId);
       } catch (error) {
         console.error('[TOURNAMENT-UI] Error fetching participants:', error);
-        
-        // Fallback: Try to get participants without JOIN to profile
-        try {
-          const { data: fallbackParticipants } = await supabase
-            .from('lobby_participants')
-            .select('id, user_id, status, is_ready, lobby_id')
-            .eq('lobby_id', lobbyId)
-            .in('status', ['searching', 'ready']);
-            
-          // Format with generic profile data
-          const formatFallback = fallbackParticipants?.map(p => ({
-            ...p,
-            profile: {
-              id: p.user_id,
-              username: `Player-${p.user_id.substring(0, 6)}`,
-              avatar_url: null
-            }
-          })) || [];
-          
-          console.log(`[TOURNAMENT-UI] Using fallback participants:`, formatFallback.map(p => p.user_id));
-          
-          dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: formatFallback });
-          dispatch({ 
-            type: 'SET_READY_PLAYERS', 
-            payload: formatFallback.filter(p => p.is_ready).map(p => p.user_id) 
-          });
-        } catch (fallbackError) {
-          console.error('[TOURNAMENT-UI] Even fallback fetch failed:', fallbackError);
-        }
       }
     } catch (error) {
       console.error('[TOURNAMENT-UI] Error refreshing lobby data:', error);

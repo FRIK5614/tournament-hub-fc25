@@ -20,6 +20,7 @@ export const useSearchActions = (
   const { toast } = useToast();
 
   const handleCancelSearch = useCallback(async () => {
+    console.log("[TOURNAMENT-UI] Cancelling search...");
     dispatch({ type: 'SET_IS_LOADING', payload: true });
     try {
       const { data: user } = await supabase.auth.getUser();
@@ -39,6 +40,9 @@ export const useSearchActions = (
       });
     } catch (error: any) {
       console.error("Ошибка при отмене поиска:", error);
+      // Даже при ошибке сбрасываем состояние поиска на фронтенде
+      dispatch({ type: 'RESET_SEARCH' });
+      
       toast({
         title: "Ошибка отмены",
         description: error.message || "Не удалось отменить поиск",
@@ -95,7 +99,13 @@ export const useSearchActions = (
       console.log("[TOURNAMENT-UI] Starting tournament search, isRetry:", isRetry);
       
       // Проверяем авторизацию пользователя
-      const { data: user } = await supabase.auth.getUser();
+      const { data: user, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        console.error("[TOURNAMENT-UI] Auth error:", authError);
+        throw new Error("Ошибка авторизации: " + authError.message);
+      }
+      
       if (!user?.user) {
         console.error("[TOURNAMENT-UI] User not authenticated");
         throw new Error("Пользователь не авторизован");
@@ -108,7 +118,10 @@ export const useSearchActions = (
       dispatch({ type: 'SET_IS_SEARCHING', payload: true });
 
       // Search for a quick tournament
-      const { lobbyId } = await searchForQuickTournament();
+      const { lobbyId } = await searchForQuickTournament().catch(error => {
+        console.error("[TOURNAMENT-UI] Error in searchForQuickTournament:", error);
+        throw error; // Перебрасываем ошибку для обработки выше
+      });
       
       console.log(`[TOURNAMENT-UI] Found lobby: ${lobbyId}`);
       
@@ -121,7 +134,10 @@ export const useSearchActions = (
       dispatch({ type: 'SET_LOBBY_ID', payload: lobbyId });
       
       // Fetch initial lobby status and participants
-      await refreshLobbyData(lobbyId);
+      await refreshLobbyData(lobbyId).catch(error => {
+        console.error("[TOURNAMENT-UI] Error refreshing lobby data:", error);
+        // Не выбрасываем ошибку здесь, продолжаем с уже полученным lobbyId
+      });
       
       // Установка состояний после успешного поиска
       dispatch({ type: 'SET_IS_LOADING', payload: false });

@@ -24,8 +24,7 @@ const TournamentIntro = ({ onStartSearch, isLoading }: TournamentIntroProps) => 
     show: { opacity: 1, y: 0 }
   };
 
-  const handleSearchClick = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleSearchClick = () => {
     console.log("[TOURNAMENT-UI] Search button clicked in TournamentIntro");
     if (!isLoading) {
       onStartSearch();

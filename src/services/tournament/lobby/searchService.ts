@@ -70,7 +70,7 @@ export const updateLobbyPlayerCountLocal = async (lobbyId: string) => {
       }))
     );
     
-    // Update lobby player count (без изменения max_players)
+    // Update lobby player count
     const { error: updateError } = await supabase
       .from('tournament_lobbies')
       .update({ current_players: count })
@@ -165,6 +165,10 @@ export const searchForQuickTournament = async () => {
       if (rpcError) {
         console.error('[TOURNAMENT] Error using RPC match_players_for_quick_tournament:', rpcError);
         throw rpcError;
+      }
+      
+      if (!rpcData) {
+        throw new Error('RPC вернул пустой результат');
       }
       
       lobbyId = rpcData;
@@ -323,18 +327,39 @@ export const searchForQuickTournament = async () => {
       // Если участника нет, добавляем его
       console.log(`[TOURNAMENT] Adding user ${user.user.id} to lobby ${lobbyId}`);
       
-      const { error: insertError } = await supabase
-        .from('lobby_participants')
-        .insert({
-          lobby_id: lobbyId,
-          user_id: user.user.id,
-          status: initialStatus,
-          is_ready: false
-        });
+      try {
+        const { error: insertError } = await supabase
+          .from('lobby_participants')
+          .insert({
+            lobby_id: lobbyId,
+            user_id: user.user.id,
+            status: initialStatus,
+            is_ready: false
+          });
+          
+        if (insertError) {
+          console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
+          throw insertError;
+        }
+      } catch (insertError) {
+        console.error(`[TOURNAMENT] Caught error inserting participant:`, insertError);
         
-      if (insertError) {
-        console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
-        throw insertError;
+        // Вторая попытка добавить участника с задержкой
+        await delay(500);
+        
+        const { error: retryError } = await supabase
+          .from('lobby_participants')
+          .insert({
+            lobby_id: lobbyId,
+            user_id: user.user.id,
+            status: initialStatus,
+            is_ready: false
+          });
+          
+        if (retryError) {
+          console.error(`[TOURNAMENT] Error in retry for adding participant:`, retryError);
+          throw retryError;
+        }
       }
     }
     

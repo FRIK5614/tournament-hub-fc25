@@ -12,6 +12,7 @@ const QuickTournamentSearch = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const lastCountdownSeconds = useRef<number | null>(null);
+  const searchButtonClickedRef = useRef(false);
   
   const {
     isSearching,
@@ -150,7 +151,9 @@ const QuickTournamentSearch = () => {
   }, [tournamentId, navigate, toast]);
 
   const startSearchWithErrorHandling = () => {
-    console.log("[TOURNAMENT-UI] Start search button clicked");
+    console.log("[TOURNAMENT-UI] Start search button clicked, setting searchButtonClickedRef");
+    searchButtonClickedRef.current = true;
+    
     try {
       handleStartSearch();
     } catch (error) {
@@ -160,6 +163,7 @@ const QuickTournamentSearch = () => {
         description: "Не удалось начать поиск турнира. Попробуйте позже.",
         variant: "destructive",
       });
+      searchButtonClickedRef.current = false;
     }
   };
 

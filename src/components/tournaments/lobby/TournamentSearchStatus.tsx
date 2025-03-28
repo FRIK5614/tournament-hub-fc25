@@ -24,7 +24,13 @@ const TournamentSearchStatus = ({
   
   // Добавляем логирование для отладки
   useEffect(() => {
-    console.log("[TOURNAMENT-UI] Render TournamentSearchStatus with participants:", lobbyParticipants);
+    console.log("[TOURNAMENT-UI] Render TournamentSearchStatus with participants:", 
+      lobbyParticipants?.map(p => ({
+        id: p.user_id,
+        username: p.profile?.username || 'Unknown',
+        status: p.status
+      }))
+    );
   }, [lobbyParticipants]);
 
   // Helper for placeholder avatars when none is available
@@ -100,7 +106,9 @@ const TournamentSearchStatus = ({
                   </div>
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-fc-background border border-white/10 flex items-center justify-center mb-1">
-                    <Users size={16} className="text-fc-accent" />
+                    <span className="text-xs font-medium">
+                      {getInitials(participant.profile?.username || `P${index}`)}
+                    </span>
                   </div>
                 )}
                 <span className="text-xs truncate max-w-[60px]">

@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
@@ -158,7 +157,12 @@ export const useTournamentSearch = () => {
 
       // Fetch participants
       const participants = await fetchLobbyParticipants(lobbyId);
-      console.log("[TOURNAMENT-UI] Fetched participants:", participants);
+      console.log("[TOURNAMENT-UI] Fetched participants:", 
+        participants.map(p => ({
+          id: p.user_id,
+          username: p.profile?.username || 'Unknown'
+        }))
+      );
       
       // Проверяем, участвует ли текущий пользователь в лобби
       const { data: user } = await supabase.auth.getUser();

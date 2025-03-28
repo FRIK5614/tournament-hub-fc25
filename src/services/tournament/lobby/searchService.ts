@@ -140,49 +140,21 @@ export const searchForQuickTournament = async () => {
       return { lobbyId: existingParticipation.tournament_id.id };
     }
     
-    // Очищаем старыеlobbyучастия
+    // Очищаем старые lobby участия
     await cleanupStaleLobbyParticipation(user.user.id);
     
-    // Остальная логика поиска турнира остается прежней
-    const findLobbyWithRetry = async (maxRetries = 3): Promise<string> => {
-      let retries = 0;
-      
-      while (retries <= maxRetries) {
-        try {
-          console.log(`[TOURNAMENT] Attempt ${retries + 1} to find/create lobby`);
-          
-          // Call RPC function to match players
-          const { data, error } = await supabase.rpc('match_players_for_quick_tournament');
-          
-          if (error) {
-            console.error(`[TOURNAMENT] Error on attempt ${retries + 1}:`, error);
-            throw error;
-          }
-          
-          if (!data) {
-            throw new Error("Сервер не вернул ID лобби");
-          }
-          
-          console.log(`[TOURNAMENT] Successfully found/created lobby: ${data}`);
-          return data;
-        } catch (err) {
-          retries++;
-          
-          if (retries > maxRetries) {
-            throw err;
-          }
-          
-          // Wait before retrying
-          console.log(`[TOURNAMENT] Retrying in 1 second (${retries}/${maxRetries})`);
-          await delay(1000);
-        }
-      }
-      
-      throw new Error("Exceeded maximum retries");
-    };
+    // Используем RPC функцию для подбора игроков
+    const { data: lobbyId, error: rpcError } = await supabase.rpc('match_players_for_quick_tournament');
     
-    // Try to find or create a lobby
-    const lobbyId = await findLobbyWithRetry();
+    if (rpcError) {
+      console.error('[TOURNAMENT] Error using RPC match_players_for_quick_tournament:', rpcError);
+      throw new Error(`Ошибка при поиске игроков: ${rpcError.message}`);
+    }
+    
+    if (!lobbyId) {
+      throw new Error("Сервер не вернул ID лобби");
+    }
+    
     console.log(`[TOURNAMENT] User ${user.user.id} matched to lobby: ${lobbyId}`);
     
     // First check if user already has a profile
@@ -245,7 +217,7 @@ export const searchForQuickTournament = async () => {
     const initialStatus = (lobbyData?.status === 'ready_check') ? 'ready' : 'searching';
     console.log(`[TOURNAMENT] Lobby ${lobbyId} has status: ${lobbyData?.status}, setting initial status to: ${initialStatus}`);
     
-    // Check if the user is already in this lobby
+    // Проверяем, есть ли уже участник в лобби
     const { data: existingParticipant, error: participantError } = await supabase
       .from('lobby_participants')
       .select('id, status, is_ready')
@@ -257,153 +229,83 @@ export const searchForQuickTournament = async () => {
       console.error(`[TOURNAMENT] Error checking existing participation:`, participantError);
     }
     
+    // Если участник уже существует, обновляем его статус
     if (existingParticipant) {
       console.log(`[TOURNAMENT] User ${user.user.id} already in lobby ${lobbyId} with status: ${existingParticipant.status}`);
       
-      // If the participant exists but status is incorrect, update their status
-      if (existingParticipant.status !== initialStatus) {
-        const { error: updateError } = await supabase
-          .from('lobby_participants')
-          .update({
-            status: initialStatus,
-            is_ready: false
-          })
-          .eq('id', existingParticipant.id);
-          
-        if (updateError) {
-          console.error(`[TOURNAMENT] Error updating participant status:`, updateError);
-        } else {
-          console.log(`[TOURNAMENT] Updated participant ${existingParticipant.id} status to '${initialStatus}'`);
-        }
+      const { error: updateError } = await supabase
+        .from('lobby_participants')
+        .update({
+          status: initialStatus,
+          is_ready: false
+        })
+        .eq('id', existingParticipant.id);
+        
+      if (updateError) {
+        console.error(`[TOURNAMENT] Error updating participant status:`, updateError);
+        throw updateError;
       }
     } else {
+      // Если участника нет, добавляем его
       console.log(`[TOURNAMENT] Adding user ${user.user.id} to lobby ${lobbyId}`);
       
-      // Check for existing participation first
-      const { data: checkParticipant } = await supabase
+      const { error: insertError } = await supabase
         .from('lobby_participants')
-        .select('id')
-        .eq('lobby_id', lobbyId)
-        .eq('user_id', user.user.id);
+        .insert({
+          lobby_id: lobbyId,
+          user_id: user.user.id,
+          status: initialStatus,
+          is_ready: false
+        });
         
-      if (checkParticipant && checkParticipant.length > 0) {
-        console.log(`[TOURNAMENT] User already has a participation record, updating status`);
-        
-        // Update instead of insert
-        await supabase
-          .from('lobby_participants')
-          .update({
-            status: initialStatus,
-            is_ready: false
-          })
-          .eq('lobby_id', lobbyId)
-          .eq('user_id', user.user.id);
-      } else {
-        // Try to insert new participant
-        try {
-          const { error: insertError } = await supabase
-            .from('lobby_participants')
-            .insert({
-              lobby_id: lobbyId,
-              user_id: user.user.id,
-              status: initialStatus,
-              is_ready: false
-            });
-            
-          if (insertError) {
-            if (insertError.code === '23505') { // Duplicate key error
-              console.log(`[TOURNAMENT] Duplicate key detected, updating existing record`);
-              
-              await supabase
-                .from('lobby_participants')
-                .update({
-                  status: initialStatus,
-                  is_ready: false
-                })
-                .eq('lobby_id', lobbyId)
-                .eq('user_id', user.user.id);
-            } else {
-              console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
-              throw insertError;
-            }
-          }
-        } catch (err) {
-          console.error(`[TOURNAMENT] Error handling participant insertion:`, err);
-          
-          // Fallback to update
-          await supabase
-            .from('lobby_participants')
-            .update({
-              status: initialStatus,
-              is_ready: false
-            })
-            .eq('lobby_id', lobbyId)
-            .eq('user_id', user.user.id);
-        }
+      if (insertError) {
+        console.error(`[TOURNAMENT] Error inserting participant:`, insertError);
+        throw insertError;
       }
     }
     
-    // Explicitly check if lobby is in ready_check status and ensure all participants have status = 'ready'
-    if (lobbyData?.status === 'ready_check') {
-      console.log(`[TOURNAMENT] Synchronizing all participants to 'ready' status for ready check`);
-      await supabase
-        .from('lobby_participants')
-        .update({ status: 'ready' })
-        .eq('lobby_id', lobbyId)
-        .eq('status', 'searching');
-    }
-    
-    // Update the lobby's current_players count - force this to update after user was added
+    // Принудительно обновляем количество игроков в лобби
     await updateLobbyPlayerCountLocal(lobbyId);
     
-    // Add a slight delay and verify the player was added correctly
-    await delay(1000);
+    // Добавляем небольшую задержку и проверяем, что игрок был добавлен корректно
+    await delay(500);
     
     const { data: verifyParticipant } = await supabase
       .from('lobby_participants')
       .select('id, status')
       .eq('lobby_id', lobbyId)
       .eq('user_id', user.user.id)
-      .maybeSingle();
+      .single();
       
     if (!verifyParticipant) {
-      console.warn(`[TOURNAMENT] Player doesn't appear to be in lobby after addition, retrying`);
+      console.error(`[TOURNAMENT] Player was not added to lobby after verification!`);
       
-      // Check one more time before trying to add
-      const { data: finalCheck } = await supabase
+      // Try one more time to add player
+      const { error: retryError } = await supabase
         .from('lobby_participants')
-        .select('id')
-        .eq('lobby_id', lobbyId)
-        .eq('user_id', user.user.id);
+        .insert({
+          lobby_id: lobbyId,
+          user_id: user.user.id,
+          status: initialStatus,
+          is_ready: false
+        });
         
-      if (!finalCheck || finalCheck.length === 0) {
-        // Final attempt to add player
-        try {
-          await supabase
-            .from('lobby_participants')
-            .insert({
-              lobby_id: lobbyId,
-              user_id: user.user.id,
-              status: initialStatus,
-              is_ready: false
-            });
-        } catch (err) {
-          console.error(`[TOURNAMENT] Final attempt at adding participant failed:`, err);
-          // Last resort fallback - try an update
-          await supabase
-            .from('lobby_participants')
-            .update({
-              status: initialStatus,
-              is_ready: false
-            })
-            .eq('lobby_id', lobbyId)
-            .eq('user_id', user.user.id);
-        }
+      if (retryError) {
+        console.error(`[TOURNAMENT] Error in final retry for adding participant:`, retryError);
       }
     }
     
-    // Force update player count one more time to ensure accuracy
+    // Make sure to get the latest participant count
     await updateLobbyPlayerCountLocal(lobbyId);
+    
+    // Let's query all participants to log them
+    const { data: allParticipants } = await supabase
+      .from('lobby_participants')
+      .select('id, user_id, status')
+      .eq('lobby_id', lobbyId)
+      .in('status', ['searching', 'ready']);
+      
+    console.log(`[TOURNAMENT] Lobby ${lobbyId} participants after user added:`, allParticipants);
     
     return { lobbyId };
   } catch (error) {

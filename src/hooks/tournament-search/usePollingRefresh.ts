@@ -36,12 +36,14 @@ export const usePollingRefresh = (
         dispatch({ type: 'SET_READY_CHECK_ACTIVE', payload: lobby.status === 'ready_check' });
       }
       
-      // Get participants - don't try to join with profiles which causes errors
+      // Get participants with complete profile data
       try {
-        // Simple select without JOIN to profiles
         const { data: participants, error: participantsError } = await supabase
           .from('lobby_participants')
-          .select('id, user_id, status, is_ready')
+          .select(`
+            id, user_id, status, is_ready, lobby_id,
+            profile:profiles(id, username, avatar_url)
+          `)
           .eq('lobby_id', lobbyId)
           .in('status', ['searching', 'ready']);
           
@@ -49,21 +51,30 @@ export const usePollingRefresh = (
           throw participantsError;
         }
         
-        console.log(`[TOURNAMENT-UI] Updating lobby ${lobbyId} player count to ${participants?.length || 0}`);
-        console.log(`[TOURNAMENT-UI] Participants found:`, participants);
+        console.log(`[TOURNAMENT-UI] Updating lobby ${lobbyId} participants:`, 
+          participants?.map(p => ({
+            id: p.user_id,
+            username: p.profile?.username || 'Unknown',
+            status: p.status,
+            is_ready: p.is_ready
+          }))
+        );
 
-        // Format participants with empty profile data
+        // Format participants with fallback for missing profile data
         const formattedParticipants = participants?.map(p => ({
           ...p,
-          lobby_id: lobbyId,
-          profile: {
+          profile: p.profile || {
+            id: p.user_id,
             username: `Player-${p.user_id.substring(0, 6)}`,
             avatar_url: null
           }
         })) || [];
         
         dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: formattedParticipants });
-        dispatch({ type: 'SET_READY_PLAYERS', payload: formattedParticipants.filter(p => p.is_ready).map(p => p.user_id) });
+        dispatch({ 
+          type: 'SET_READY_PLAYERS', 
+          payload: formattedParticipants.filter(p => p.is_ready).map(p => p.user_id) 
+        });
         
         // Update the ready check if we have exactly 4 participants
         if (formattedParticipants.length === 4 && !readyCheckActive && lobby?.status === 'waiting') {
@@ -98,6 +109,35 @@ export const usePollingRefresh = (
         await updateLobbyPlayerCount(lobbyId);
       } catch (error) {
         console.error('[TOURNAMENT-UI] Error fetching participants:', error);
+        
+        // Fallback: Try to get participants without JOIN to profile
+        try {
+          const { data: fallbackParticipants } = await supabase
+            .from('lobby_participants')
+            .select('id, user_id, status, is_ready, lobby_id')
+            .eq('lobby_id', lobbyId)
+            .in('status', ['searching', 'ready']);
+            
+          // Format with generic profile data
+          const formatFallback = fallbackParticipants?.map(p => ({
+            ...p,
+            profile: {
+              id: p.user_id,
+              username: `Player-${p.user_id.substring(0, 6)}`,
+              avatar_url: null
+            }
+          })) || [];
+          
+          console.log(`[TOURNAMENT-UI] Using fallback participants:`, formatFallback.map(p => p.user_id));
+          
+          dispatch({ type: 'SET_LOBBY_PARTICIPANTS', payload: formatFallback });
+          dispatch({ 
+            type: 'SET_READY_PLAYERS', 
+            payload: formatFallback.filter(p => p.is_ready).map(p => p.user_id) 
+          });
+        } catch (fallbackError) {
+          console.error('[TOURNAMENT-UI] Even fallback fetch failed:', fallbackError);
+        }
       }
     } catch (error) {
       console.error('[TOURNAMENT-UI] Error refreshing lobby data:', error);
@@ -113,7 +153,7 @@ export const usePollingRefresh = (
       
       const intervalId = setInterval(() => {
         refreshLobbyData(lobbyId);
-      }, 5000);
+      }, 3000); // Polling every 3 seconds
       
       return () => clearInterval(intervalId);
     }

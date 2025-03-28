@@ -84,11 +84,11 @@ export const registerForLongTermTournament = async (tournamentId: string) => {
       
     if (error) throw error;
     
-    // Update tournament participants count using raw SQL instead of rpc
-    const { error: updateError } = await supabase
-      .from('tournaments')
-      .update({ current_participants: supabase.sql`current_participants + 1` })
-      .eq('id', tournamentId);
+    // Update tournament participants count using a direct query instead of sql function
+    const { error: updateError } = await supabase.rpc(
+      'increment_tournament_participants',
+      { tournament_id: tournamentId }
+    ).single();
       
     if (updateError) throw updateError;
       
@@ -120,18 +120,31 @@ export const getLongTermTournaments = async () => {
 // Clean up duplicates
 export const cleanupDuplicateTournaments = async () => {
   try {
-    // Execute SQL directly instead of RPC since it's not properly defined
+    // Use a subquery approach that works with the TypeScript types
+    const { data: duplicateIds } = await supabase
+      .from('tournaments')
+      .select('id')
+      .not('lobby_id', 'is', null)
+      .order('created_at', { ascending: true })
+      .limit(1000)
+      .offset(1);
+    
+    if (!duplicateIds || duplicateIds.length === 0) {
+      return { 
+        success: true, 
+        message: "Нет дублирующихся турниров для очистки", 
+        cleanedUp: 0 
+      };
+    }
+    
+    // Extract just the IDs into an array
+    const idsToDelete = duplicateIds.map(t => t.id);
+    
+    // Delete the tournaments with these IDs
     const { data, error } = await supabase
       .from('tournaments')
       .delete()
-      .in('id', function(db) {
-        return db.from('tournaments')
-          .select('id')
-          .not('lobby_id', 'is', null)
-          .order('created_at', { ascending: true })
-          .limit(1000)
-          .offset(1);
-      })
+      .in('id', idsToDelete)
       .select();
     
     if (error) throw error;
@@ -152,28 +165,22 @@ export const cleanupDuplicateTournaments = async () => {
 // Analyze tournament creation for duplicates
 export const analyzeTournamentCreation = async () => {
   try {
-    // Use a different approach without group() function
-    const { data: duplicates, error } = await supabase
+    // First, find lobbies that have more than one tournament
+    const { data: duplicateLobbyIds, error: lobbyError } = await supabase
       .from('tournaments')
-      .select('lobby_id, count')
+      .select('lobby_id, count(*)')
       .not('lobby_id', 'is', null)
-      .in('lobby_id', function(db) {
-        return db.from('tournaments')
-          .select('lobby_id')
-          .not('lobby_id', 'is', null)
-          .select('lobby_id, count(*) as count')
-          .groupBy('lobby_id')
-          .gt('count', 1);
-      });
+      .group('lobby_id')
+      .gte('count', 2);
       
-    if (error) throw error;
+    if (lobbyError) throw lobbyError;
     
     let totalDuplicates = 0;
     const duplicateSets = [];
     const duplicationPatterns = {};
     
     // Get detailed data about each duplicate set
-    for (const item of duplicates || []) {
+    for (const item of duplicateLobbyIds || []) {
       if (!item.lobby_id) continue;
       
       const { data: details } = await supabase

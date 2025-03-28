@@ -1,4 +1,3 @@
-
 import { supabase } from "@/integrations/supabase/client";
 
 // Get tournament standings
@@ -84,11 +83,11 @@ export const registerForLongTermTournament = async (tournamentId: string) => {
       
     if (error) throw error;
     
-    // Update tournament participants count using a direct query instead of sql function
-    const { error: updateError } = await supabase.rpc(
-      'increment_tournament_participants',
-      { tournament_id: tournamentId }
-    ).single();
+    // Update tournament participants count - we'll use a direct update instead of RPC
+    const { error: updateError } = await supabase
+      .from('tournaments')
+      .update({ current_participants: supabase.rpc('get_participant_count', { t_id: tournamentId }) })
+      .eq('id', tournamentId);
       
     if (updateError) throw updateError;
       
@@ -120,16 +119,16 @@ export const getLongTermTournaments = async () => {
 // Clean up duplicates
 export const cleanupDuplicateTournaments = async () => {
   try {
-    // Use a subquery approach that works with the TypeScript types
-    const { data: duplicateIds } = await supabase
+    // First, get all tournaments with lobby_id
+    const { data: tournaments, error: fetchError } = await supabase
       .from('tournaments')
-      .select('id')
+      .select('id, lobby_id, created_at')
       .not('lobby_id', 'is', null)
-      .order('created_at', { ascending: true })
-      .limit(1000)
-      .offset(1);
+      .order('created_at', { ascending: true });
     
-    if (!duplicateIds || duplicateIds.length === 0) {
+    if (fetchError) throw fetchError;
+    
+    if (!tournaments || tournaments.length <= 1) {
       return { 
         success: true, 
         message: "Нет дублирующихся турниров для очистки", 
@@ -137,14 +136,34 @@ export const cleanupDuplicateTournaments = async () => {
       };
     }
     
-    // Extract just the IDs into an array
-    const idsToDelete = duplicateIds.map(t => t.id);
+    // Keep the first tournament for each lobby_id
+    const tournamentsToKeep = new Set<string>();
+    const lobbySeen = new Set<string>();
+    const tournamentsToDelete: string[] = [];
     
-    // Delete the tournaments with these IDs
+    tournaments.forEach(tournament => {
+      const lobbyId = tournament.lobby_id;
+      if (lobbyId && !lobbySeen.has(lobbyId)) {
+        lobbySeen.add(lobbyId);
+        tournamentsToKeep.add(tournament.id);
+      } else if (lobbyId) {
+        tournamentsToDelete.push(tournament.id);
+      }
+    });
+    
+    if (tournamentsToDelete.length === 0) {
+      return { 
+        success: true, 
+        message: "Нет дублирующихся турниров для очистки", 
+        cleanedUp: 0 
+      };
+    }
+    
+    // Delete the tournaments that are duplicates
     const { data, error } = await supabase
       .from('tournaments')
       .delete()
-      .in('id', idsToDelete)
+      .in('id', tournamentsToDelete)
       .select();
     
     if (error) throw error;
@@ -165,16 +184,34 @@ export const cleanupDuplicateTournaments = async () => {
 // Analyze tournament creation for duplicates
 export const analyzeTournamentCreation = async () => {
   try {
-    // First, find lobbies that have more than one tournament
-    const { data: duplicateLobbyIds, error: lobbyError } = await supabase
+    // First, fetch all tournaments with lobby_id
+    const { data: tournaments, error: tournamentError } = await supabase
       .from('tournaments')
-      .select('lobby_id, count(*)')
+      .select('id, lobby_id, created_at')
       .not('lobby_id', 'is', null)
-      .group('lobby_id')
-      .gte('count', 2);
+      .order('created_at', { ascending: true });
       
-    if (lobbyError) throw lobbyError;
+    if (tournamentError) throw tournamentError;
     
+    // Process the results to find duplicates - client-side grouping
+    const lobbyMap: Record<string, { count: number; tournaments: any[] }> = {};
+    
+    tournaments?.forEach(tournament => {
+      if (tournament.lobby_id) {
+        if (!lobbyMap[tournament.lobby_id]) {
+          lobbyMap[tournament.lobby_id] = { count: 0, tournaments: [] };
+        }
+        
+        lobbyMap[tournament.lobby_id].count++;
+        lobbyMap[tournament.lobby_id].tournaments.push(tournament);
+      }
+    });
+    
+    // Filter to lobbies with more than one tournament
+    const duplicateLobbyIds = Object.entries(lobbyMap)
+      .filter(([_, data]) => data.count >= 2)
+      .map(([lobbyId, data]) => ({ lobby_id: lobbyId, count: data.count }));
+      
     let totalDuplicates = 0;
     const duplicateSets = [];
     const duplicationPatterns = {};
@@ -183,36 +220,32 @@ export const analyzeTournamentCreation = async () => {
     for (const item of duplicateLobbyIds || []) {
       if (!item.lobby_id) continue;
       
-      const { data: details } = await supabase
-        .from('tournaments')
-        .select('id, title, created_at')
-        .eq('lobby_id', item.lobby_id)
-        .order('created_at', { ascending: true });
-        
-      if (details && details.length > 1) {
+      const tournaments = lobbyMap[item.lobby_id].tournaments;
+      
+      if (tournaments && tournaments.length > 1) {
         // Calculate time differences between creations
         const timeIntervals = [];
-        for (let i = 1; i < details.length; i++) {
-          const prev = new Date(details[i-1].created_at).getTime();
-          const curr = new Date(details[i].created_at).getTime();
+        for (let i = 1; i < tournaments.length; i++) {
+          const prev = new Date(tournaments[i-1].created_at).getTime();
+          const curr = new Date(tournaments[i].created_at).getTime();
           timeIntervals.push((curr - prev) / 1000); // in seconds
         }
         
         const avgInterval = timeIntervals.reduce((sum, val) => sum + val, 0) / timeIntervals.length;
         
         duplicationPatterns[item.lobby_id] = {
-          count: details.length,
+          count: tournaments.length,
           avgInterval,
-          timestamps: details.map(d => d.created_at)
+          timestamps: tournaments.map(d => d.created_at)
         };
         
         duplicateSets.push({
           lobbyId: item.lobby_id,
-          count: details.length,
-          tournaments: details
+          count: tournaments.length,
+          tournaments: tournaments
         });
         
-        totalDuplicates += details.length - 1; // Count all but the first as duplicates
+        totalDuplicates += tournaments.length - 1; // Count all but the first as duplicates
       }
     }
     

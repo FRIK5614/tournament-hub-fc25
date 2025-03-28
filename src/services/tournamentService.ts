@@ -1,5 +1,5 @@
 
-// This file re-exports tournament services
+// This file re-exports tournament services to avoid duplicate exports
 
 // Only export specific functions to avoid conflicts
 export { 

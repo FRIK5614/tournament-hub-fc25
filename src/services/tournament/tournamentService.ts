@@ -84,11 +84,13 @@ export const registerForLongTermTournament = async (tournamentId: string) => {
       
     if (error) throw error;
     
-    // Update tournament participants count
-    await supabase
+    // Update tournament participants count using raw SQL instead of rpc
+    const { error: updateError } = await supabase
       .from('tournaments')
-      .update({ current_participants: supabase.rpc('increment', { count: 1 }) })
+      .update({ current_participants: supabase.sql`current_participants + 1` })
       .eq('id', tournamentId);
+      
+    if (updateError) throw updateError;
       
     return { success: true };
   } catch (error: any) {
@@ -118,12 +120,29 @@ export const getLongTermTournaments = async () => {
 // Clean up duplicates
 export const cleanupDuplicateTournaments = async () => {
   try {
-    // Call the RPC function
-    const { error } = await supabase.rpc('cleanup_duplicate_tournaments');
+    // Execute SQL directly instead of RPC since it's not properly defined
+    const { data, error } = await supabase
+      .from('tournaments')
+      .delete()
+      .in('id', function(db) {
+        return db.from('tournaments')
+          .select('id')
+          .not('lobby_id', 'is', null)
+          .order('created_at', { ascending: true })
+          .limit(1000)
+          .offset(1);
+      })
+      .select();
     
     if (error) throw error;
     
-    return { success: true, message: "Успешно очищены дублирующиеся турниры" };
+    const cleanedUp = data?.length || 0;
+    
+    return { 
+      success: true, 
+      message: "Успешно очищены дублирующиеся турниры", 
+      cleanedUp 
+    };
   } catch (error: any) {
     console.error("Error cleaning up tournaments:", error);
     throw new Error(`Ошибка при очистке турниров: ${error.message}`);
@@ -133,38 +152,73 @@ export const cleanupDuplicateTournaments = async () => {
 // Analyze tournament creation for duplicates
 export const analyzeTournamentCreation = async () => {
   try {
-    const { data, error } = await supabase
+    // Use a different approach without group() function
+    const { data: duplicates, error } = await supabase
       .from('tournaments')
-      .select('lobby_id, count(*)')
+      .select('lobby_id, count')
       .not('lobby_id', 'is', null)
-      .group('lobby_id')
-      .having('count(*)', 'gt', 1);
+      .in('lobby_id', function(db) {
+        return db.from('tournaments')
+          .select('lobby_id')
+          .not('lobby_id', 'is', null)
+          .select('lobby_id, count(*) as count')
+          .groupBy('lobby_id')
+          .gt('count', 1);
+      });
       
     if (error) throw error;
     
     let totalDuplicates = 0;
     const duplicateSets = [];
+    const duplicationPatterns = {};
     
-    for (const row of data || []) {
+    // Get detailed data about each duplicate set
+    for (const item of duplicates || []) {
+      if (!item.lobby_id) continue;
+      
       const { data: details } = await supabase
         .from('tournaments')
         .select('id, title, created_at')
-        .eq('lobby_id', row.lobby_id)
+        .eq('lobby_id', item.lobby_id)
         .order('created_at', { ascending: true });
         
       if (details && details.length > 1) {
+        // Calculate time differences between creations
+        const timeIntervals = [];
+        for (let i = 1; i < details.length; i++) {
+          const prev = new Date(details[i-1].created_at).getTime();
+          const curr = new Date(details[i].created_at).getTime();
+          timeIntervals.push((curr - prev) / 1000); // in seconds
+        }
+        
+        const avgInterval = timeIntervals.reduce((sum, val) => sum + val, 0) / timeIntervals.length;
+        
+        duplicationPatterns[item.lobby_id] = {
+          count: details.length,
+          avgInterval,
+          timestamps: details.map(d => d.created_at)
+        };
+        
         duplicateSets.push({
-          lobbyId: row.lobby_id,
+          lobbyId: item.lobby_id,
           count: details.length,
           tournaments: details
         });
-        totalDuplicates += details.length - 1;
+        
+        totalDuplicates += details.length - 1; // Count all but the first as duplicates
       }
     }
     
+    // Get total analyzed count
+    const { count: totalAnalyzed } = await supabase
+      .from('tournaments')
+      .select('*', { count: 'exact', head: true });
+    
     return {
       totalDuplicates,
+      totalAnalyzed,
       duplicateSets,
+      duplicationPatterns,
       hasIssues: totalDuplicates > 0
     };
   } catch (error: any) {

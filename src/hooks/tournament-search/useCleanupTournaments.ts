@@ -44,7 +44,7 @@ export const useCleanupTournaments = () => {
       
       toast({
         title: 'Очистка завершена',
-        description: `Исправлено ${result.cleanedUp} дубликатов турниров`,
+        description: `Исправлено ${result.cleanedUp || 0} дубликатов турниров`,
         variant: 'default',
       });
       
